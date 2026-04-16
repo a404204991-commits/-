@@ -75,8 +75,8 @@ export default function App() {
       ...card,
       atmosphere: card.atmosphere || [],
       morphology: card.morphology || [],
-      x: (window.innerWidth / 2 - boardView.x - 100) / boardView.scale,
-      y: (window.innerHeight / 2 - boardView.y - 150) / boardView.scale,
+      x: (window.innerWidth / 2 - boardView.x - 104) / boardView.scale,
+      y: (window.innerHeight / 2 - boardView.y - 170) / boardView.scale,
       zIndex: maxZ + 1,
       isSelected: false,
       isAiAnalyzed: true,
@@ -176,7 +176,6 @@ function MoodBoard({ items, setItems, view, setView, darkMode, setIsAiAnalyzing,
     return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
   };
 
-  // 快捷键系统
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (isUserTyping()) return;
@@ -216,8 +215,8 @@ function MoodBoard({ items, setItems, view, setView, darkMode, setIsAiAnalyzing,
 
   const addNewImage = (src, rawX, rawY) => {
     const rect = boardRef.current.getBoundingClientRect();
-    const x = (rawX - rect.left - view.x) / view.scale;
-    const y = (rawY - rect.top - view.y) / view.scale;
+    const x = (rawX - rect.left - view.x) / view.scale - 104; // 以 208 宽度中心为准
+    const y = (rawY - rect.top - view.y) / view.scale - 170;  // 以 340 高度中心为准
     const maxZ = Math.max(0, ...items.map(i => i.zIndex || 0));
     const newItem = { boardId: `img-${Date.now()}`, type: 'vocabulary', title: '粘贴的图片', category: '自定义', mainImage: src, atmosphere: [], morphology: [], x, y, zIndex: maxZ + 1, isSelected: false, w: 208, h: 340 };
     saveSnapshot(items);
@@ -226,8 +225,14 @@ function MoodBoard({ items, setItems, view, setView, darkMode, setIsAiAnalyzing,
 
   const addNewText = (content = "", rawX, rawY) => {
     const rect = boardRef.current.getBoundingClientRect();
-    const x = rawX !== undefined ? (rawX - rect.left - view.x) / view.scale : (rect.width / 2 - view.x - 50) / view.scale;
-    const y = rawY !== undefined ? (rawY - rect.top - view.y) / view.scale : (rect.height / 2 - view.y - 20) / view.scale;
+    // 关键修复：以鼠标坐标为中心，偏移初始宽度的 50% 和高度的 50%
+    const x = rawX !== undefined 
+      ? (rawX - rect.left - view.x) / view.scale - 50 
+      : (rect.width / 2 - view.x) / view.scale - 50;
+    const y = rawY !== undefined 
+      ? (rawY - rect.top - view.y) / view.scale - 20 
+      : (rect.height / 2 - view.y) / view.scale - 20;
+
     const maxZ = Math.max(0, ...items.map(i => i.zIndex || 0));
     const newItem = { boardId: `txt-${Date.now()}`, id: `custom-txt-${Date.now()}`, type: 'text', content, x, y, zIndex: maxZ + 1, isSelected: false, isFresh: true, w: 100, h: 40 };
     saveSnapshot(items);
@@ -279,7 +284,6 @@ function MoodBoard({ items, setItems, view, setView, darkMode, setIsAiAnalyzing,
             const itemW = item.w || 100;
             const itemH = item.h || 40;
             const isOverlapping = !(item.x + itemW < box.x || item.x > box.x + box.w || item.y + itemH < box.y || item.y > box.y + box.h);
-            // 关键优化：框选中的那一刻也更新 zIndex，让选中的跑上面
             if (isOverlapping && !item.isSelected) {
               nextMaxZ++;
               return { ...item, isSelected: true, zIndex: nextMaxZ };
@@ -323,7 +327,6 @@ function MoodBoard({ items, setItems, view, setView, darkMode, setIsAiAnalyzing,
                   return prev.map(it => {
                     if (it.boardId === id) {
                       const isNowSelected = multi ? !it.isSelected : true;
-                      // 关键修复：点击选中的那一刻，更新 zIndex 至最高
                       return { ...it, isSelected: isNowSelected, zIndex: isNowSelected ? maxZ + 1 : it.zIndex };
                     }
                     return multi ? it : { ...it, isSelected: false };
