@@ -20,7 +20,7 @@ export default function App() {
   
   // 这里的逻辑：如果本地有导入的数据就用本地的，否则用演示数据
   // 在你的本地开发环境中，请确保 data.json 已生成并正确导入
-  const [vocabularyCards, setVocabularyCards] = useState(MOCK_DATA);
+  const [vocabularyCards, setVocabularyCards] = useState(vocabularyData);
   
   const [feedback, setFeedback] = useState({ message: null, type: 'success' }); 
   const [boardItems, setBoardItems] = useState([]); 
