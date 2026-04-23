@@ -6,7 +6,34 @@ import {
   Undo2, Redo2, ClipboardPaste, ImagePlus
 } from 'lucide-react';
 
-import vocabularyDataFromLocal from './data.json'; 
+/**
+ * --- 本地开发说明 ---
+ * 在您的本地 GitHub 环境中，请确保运行过 node convert.js 生成了 src/data.json。
+ * 然后取消下面这一行的注释来引入真实数据：
+ */
+// import vocabularyDataFromLocal from './data.json'; 
+
+// 为了让当前的在线预览能正常运行而不报错，我们预设一组演示数据
+const MOCK_DATA = [
+  {
+    id: 'v1',
+    title: '先锋主义 (演示)',
+    category1: '风格',
+    category2: '先锋主义',
+    description: '这是演示数据。如果您在本地运行并生成了 data.json，请按代码上方的注释取消 import 的注释。',
+    related: ['几何构成', '不锈钢', '前卫'],
+    mainImage: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&q=80&w=800'
+  },
+  {
+    id: 'v2',
+    title: '现代简约 (演示)',
+    category1: '风格',
+    category2: '极简',
+    description: '少即是多，通过精炼的线条和色彩表达空间的纯粹感。',
+    related: ['极简', '留白'],
+    mainImage: 'https://images.unsplash.com/photo-1615873968403-89e068629275?auto=format&fit=crop&q=80&w=800'
+  }
+];
 
 const apiKey = ""; 
 const GEN_MODEL = "gemini-2.5-flash-preview-09-2025";
@@ -18,9 +45,14 @@ export default function App() {
   const [selectedBoardItem, setSelectedBoardItem] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // 这里的逻辑：如果本地有导入的数据就用本地的，否则用演示数据
-  // 在你的本地开发环境中，请确保 data.json 已生成并正确导入
-  const [vocabularyCards, setVocabularyCards] = useState(vocabularyData);
+  // --- 核心修复：防止变量未定义导致的白屏 ---
+  const [vocabularyCards, setVocabularyCards] = useState(() => {
+    // 检查 vocabularyDataFromLocal 是否被正确导入（即在本地环境下）
+    if (typeof vocabularyDataFromLocal !== 'undefined' && Array.isArray(vocabularyDataFromLocal)) {
+      return vocabularyDataFromLocal;
+    }
+    return MOCK_DATA; // 否则使用演示数据
+  });
   
   const [feedback, setFeedback] = useState({ message: null, type: 'success' }); 
   const [boardItems, setBoardItems] = useState([]); 
