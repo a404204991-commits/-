@@ -11,7 +11,7 @@ import {
  * 在您的本地 GitHub 环境中，请确保运行过 node convert.js 生成了 src/data.json。
  * 然后取消下面这一行的注释来引入真实数据：
  */
-// import vocabularyDataFromLocal from './data.json'; 
+import vocabularyDataFromLocal from './data.json'; 
 
 // 为了让当前的在线预览能正常运行而不报错，我们预设一组演示数据
 const MOCK_DATA = [
