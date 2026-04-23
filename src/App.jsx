@@ -6,32 +6,7 @@ import {
   Undo2, Redo2, ClipboardPaste, ImagePlus
 } from 'lucide-react';
 
-/**
- * 注意：在你的本地 GitHub 环境中，取消下面这行注释来引入由 convert.js 生成的数据：
- * import vocabularyDataFromLocal from './data.json'; 
- */
-
-// 为了让当前的预览能跑通，我们定义一个备用数据源
-const MOCK_DATA = [
-  {
-    id: 'v1',
-    title: '先锋主义',
-    category1: '风格',
-    category2: '先锋主义',
-    description: '突破传统、追求创新与实验性。常见设计手法包括非对称布局、非常规材料运用、抽象化造型及大胆色彩碰撞。',
-    related: ['几何构成', '不锈钢', '戏剧张力'],
-    mainImage: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&q=80&w=800'
-  },
-  {
-    id: 'v2',
-    title: '侘寂风',
-    category1: '风格',
-    category2: '东方美学',
-    description: '源自日本的美学意识，强调残缺之美、简陋之美以及随着时间流逝而产生的质感。',
-    related: ['微水泥', '原木', '自然'],
-    mainImage: 'https://images.unsplash.com/photo-1615873968403-89e068629275?auto=format&fit=crop&q=80&w=800'
-  }
-];
+import vocabularyDataFromLocal from './data.json'; 
 
 const apiKey = ""; 
 const GEN_MODEL = "gemini-2.5-flash-preview-09-2025";
