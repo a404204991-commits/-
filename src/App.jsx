@@ -13,7 +13,7 @@ import {
  */
 import vocabularyData from './data.json'; 
 
-// 备用演示数据：如果 data.json 为空时使用
+// 备用演示数据
 const MOCK_DATA = [
   {
     id: 'v1',
@@ -22,7 +22,7 @@ const MOCK_DATA = [
     category2: '先锋主义',
     description: '强调实验性与反传统的空间表达。',
     related: ['几何构成', '不锈钢'],
-    mainImage: '' // 测试无图情况
+    mainImage: '' 
   }
 ];
 
@@ -42,6 +42,11 @@ export default function App() {
     } catch (e) {}
     return MOCK_DATA;
   });
+
+  // 辅助函数：自动识别数据中的“名称”字段，防止因 CSV 表头不匹配导致“无名”
+  const getVocabTitle = (card) => {
+    return card.title || card.name || card['语汇'] || card['语汇名称'] || "未命名语汇";
+  };
   
   const [feedback, setFeedback] = useState({ message: null, type: 'success' }); 
   const [boardItems, setBoardItems] = useState([]); 
@@ -49,13 +54,26 @@ export default function App() {
   const [history, setHistory] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
 
-  // 搜索过滤
+  // 搜索、排序与过滤
   const filteredCards = useMemo(() => {
-    return vocabularyCards.filter(card => 
-      (card.title || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (card.category1 || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (card.description || "").toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    // 1. 过滤逻辑
+    let result = vocabularyCards.filter(card => {
+      const title = getVocabTitle(card).toLowerCase();
+      const cat = (card.category1 || "").toLowerCase();
+      const desc = (card.description || "").toLowerCase();
+      const search = searchTerm.toLowerCase();
+      return title.includes(search) || cat.includes(search) || desc.includes(search);
+    });
+
+    // 2. 排序逻辑：优先按 ID 排序，其次按分类，最后按名称
+    return result.sort((a, b) => {
+      if (a.id && b.id) {
+        return String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
+      }
+      const catComp = (a.category1 || "").localeCompare(b.category1 || "");
+      if (catComp !== 0) return catComp;
+      return getVocabTitle(a).localeCompare(getVocabTitle(b));
+    });
   }, [vocabularyCards, searchTerm]);
 
   const isUserTyping = () => {
@@ -94,9 +112,11 @@ export default function App() {
   };
 
   const addToBoard = (card) => {
+    const title = getVocabTitle(card);
     const newItem = {
       boardId: `board-${Date.now()}`,
       ...card,
+      title: title, // 确保带入正确的名称
       atmosphere: card.related || [],
       x: (window.innerWidth / 2 - boardView.x - 100) / boardView.scale,
       y: (window.innerHeight / 2 - boardView.y - 150) / boardView.scale,
@@ -107,7 +127,7 @@ export default function App() {
     };
     saveSnapshot(boardItems);
     setBoardItems([...boardItems, newItem]);
-    showFeedback(`已添加 "${card.title}"`);
+    showFeedback(`已添加 "${title}"`);
   };
 
   const isMoodboardMode = activeTab === 'moodboard';
@@ -163,7 +183,7 @@ export default function App() {
                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
                   <input 
                     type="text" 
-                    placeholder="搜索语汇、分类..." 
+                    placeholder="搜索语汇名称、分类..." 
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className={`w-full py-4 pl-12 pr-6 rounded-3xl text-sm outline-none border-2 transition-all ${darkMode ? 'bg-zinc-900 border-zinc-800 focus:border-indigo-500' : 'bg-zinc-50 border-transparent focus:bg-white focus:border-indigo-500'}`} 
@@ -171,14 +191,14 @@ export default function App() {
                </div>
             </header>
             
-            {/* 卡片列表 */}
             <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-6 space-y-6">
-              {filteredCards.map(card => (
-                <div key={card.id || card.title} onClick={() => setSelectedCard(card)} className={`break-inside-avoid group cursor-pointer overflow-hidden rounded-[32px] border-2 transition-all duration-500 ${darkMode ? 'bg-zinc-900 border-zinc-800 hover:border-indigo-500 shadow-2xl shadow-black' : 'bg-white border-zinc-100 hover:border-indigo-500 shadow-sm'}`}>
-                  {/* 图片显示逻辑修复：处理主图缺失 */}
+              {filteredCards.map((card, idx) => (
+                <div key={card.id || `card-${idx}`} onClick={() => setSelectedCard(card)} className={`break-inside-avoid group cursor-pointer overflow-hidden rounded-[32px] border-2 transition-all duration-500 ${darkMode ? 'bg-zinc-900 border-zinc-800 hover:border-indigo-500 shadow-2xl shadow-black' : 'bg-white border-zinc-100 hover:border-indigo-500 shadow-sm'}`}>
+                  
+                  {/* 图片占位修复 */}
                   <div className="aspect-[4/5] overflow-hidden relative bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
                     {card.mainImage ? (
-                      <img src={card.mainImage} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" alt={card.title} />
+                      <img src={card.mainImage} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" alt={getVocabTitle(card)} />
                     ) : (
                       <div className="flex flex-col items-center gap-2 opacity-20">
                         <ImageOff size={40} />
@@ -186,15 +206,15 @@ export default function App() {
                       </div>
                     )}
                     <div className="absolute top-5 left-5 px-3 py-1 bg-black/60 backdrop-blur-md text-[9px] font-bold text-white rounded-full uppercase tracking-widest">
-                      {card.category1} {card.category2 && `· ${card.category2}`}
+                      {card.category1 || "设计语汇"} {card.category2 && `· ${card.category2}`}
                     </div>
                   </div>
                   
-                  {/* 名字缺失修复：确保标题区域高度并显式定义颜色 */}
+                  {/* 名字显示优化 */}
                   <div className="p-6 flex justify-between items-center">
                     <div className="truncate pr-4">
                       <h3 className={`font-black text-xl tracking-tight truncate ${darkMode ? 'text-zinc-100' : 'text-zinc-900'}`}>
-                        {card.title || "未命名语汇"}
+                        {getVocabTitle(card)}
                       </h3>
                       <p className="text-[10px] text-zinc-400 font-bold uppercase">{card.category1 || "未分类"}</p>
                     </div>
@@ -216,10 +236,10 @@ export default function App() {
         )}
       </main>
 
-      {/* 详情弹窗修复：调整分类标签配色 */}
       {selectedCard && (
         <DetailModal 
           card={selectedCard} 
+          title={getVocabTitle(selectedCard)}
           onClose={() => setSelectedCard(null)} 
           darkMode={darkMode} 
           onAddToBoard={addToBoard} 
@@ -238,7 +258,7 @@ export default function App() {
   );
 }
 
-// 子组件定义
+// 子组件
 function NavItem({ icon, label, active, onClick, darkMode }) {
   return (
     <button onClick={onClick} className={`w-full flex items-center transition-all duration-300 h-14 relative group/item ${active ? 'text-white' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900'}`}>
@@ -316,7 +336,7 @@ function MoodBoard({ items, setItems, view, setView, darkMode, onOpenDetail, und
       
       <div className={`w-80 border-l p-8 flex flex-col ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-100'}`}>
         <div className="flex items-center gap-2 mb-8"><Sparkles size={20} className="text-indigo-500" /><h3 className="font-black text-xs uppercase tracking-widest">AI Panel</h3></div>
-        <p className="text-xs opacity-40">在白板模式下，你可以自由编排语汇卡片...</p>
+        <p className="text-xs opacity-40 leading-relaxed">选中卡片，AI 将在此为你聚合灵感关键词并生成空间描述语...</p>
       </div>
     </div>
   );
@@ -349,7 +369,7 @@ function BoardItem({ item, darkMode, onMove, onMoveEnd, onSelect, onDoubleClick,
       className={`transition-[box-shadow,border-color] duration-300 w-52 rounded-[32px] p-2 border-4 ${item.isSelected ? 'border-indigo-500 ring-8 ring-indigo-500/10 scale-105' : 'border-transparent'} ${darkMode ? 'bg-zinc-900 shadow-2xl' : 'bg-white shadow-xl'}`}
     >
       <div className="relative flex flex-col items-center">
-        <div className="absolute top-3 left-3 px-2 py-0.5 bg-black/50 backdrop-blur-md text-[8px] font-bold text-white rounded uppercase tracking-tighter z-10">{item.category1}</div>
+        <div className="absolute top-3 left-3 px-2 py-0.5 bg-black/50 backdrop-blur-md text-[8px] font-bold text-white rounded uppercase tracking-tighter z-10">{item.category1 || '自定义'}</div>
         <div className="aspect-[4/5] w-full bg-zinc-100 dark:bg-zinc-800 rounded-[24px] overflow-hidden flex items-center justify-center">
           {item.mainImage ? (
              <img src={item.mainImage} className="w-full h-full object-cover pointer-events-none" alt={item.title} />
@@ -370,8 +390,7 @@ function BoardItem({ item, darkMode, onMove, onMoveEnd, onSelect, onDoubleClick,
   );
 }
 
-// --- 详情弹窗修复 ---
-function DetailModal({ card, onClose, darkMode, onAddToBoard }) {
+function DetailModal({ card, title, onClose, darkMode, onAddToBoard }) {
   return (
     <div onClick={onClose} className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-md bg-black/80">
       <div onClick={(e) => e.stopPropagation()} className={`relative w-full max-w-5xl h-[80vh] overflow-hidden rounded-[48px] flex flex-col md:flex-row shadow-2xl ${darkMode ? 'bg-zinc-900 border border-zinc-800 text-white' : 'bg-white text-zinc-900'}`}>
@@ -379,7 +398,7 @@ function DetailModal({ card, onClose, darkMode, onAddToBoard }) {
         
         <div className="md:w-[60%] bg-zinc-950 flex items-center justify-center overflow-hidden">
           {card.mainImage ? (
-            <img src={card.mainImage} className="max-w-full max-h-full object-contain" alt={card.title} />
+            <img src={card.mainImage} className="max-w-full max-h-full object-contain" alt={title} />
           ) : (
             <div className="text-zinc-700 flex flex-col items-center gap-4">
               <ImageOff size={64} />
@@ -389,7 +408,6 @@ function DetailModal({ card, onClose, darkMode, onAddToBoard }) {
         </div>
 
         <div className="md:w-[40%] p-12 overflow-y-auto border-l dark:border-zinc-800">
-          {/* 分类标签颜色修复：增加显式的背景和文字色 */}
           <span className={`px-4 py-1.5 text-[10px] font-black rounded-lg uppercase mb-6 inline-block tracking-widest ${
             darkMode ? 'bg-zinc-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'
           }`}>
@@ -397,7 +415,7 @@ function DetailModal({ card, onClose, darkMode, onAddToBoard }) {
           </span>
 
           <h2 className={`text-4xl font-black tracking-tighter mb-8 leading-[0.9] ${darkMode ? 'text-zinc-100' : 'text-zinc-900'}`}>
-            {card.title || "未命名语汇"}
+            {title}
           </h2>
 
           <div className="space-y-6 mb-10">
