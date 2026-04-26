@@ -9,16 +9,16 @@ import {
 const apiKey = ""; 
 const GEN_MODEL = "gemini-2.5-flash-preview-09-2025";
 
-// 定义预设回退数据，防止数据库加载失败时页面空白
+// 定义预设回退数据，作为数据库加载前的缓冲
 const FALLBACK_VOCABULARY = [
   {
     id: 'v1',
     type: 'vocabulary',
-    title: '先锋主义',
+    title: '海派风格',
     category1: '设计风格',
-    category2: '现代演变',
-    description: '突破传统、追求创新与实验性。常见设计手法包括非对称布局、非常规材料运用、抽象化造型及大胆色彩碰撞。',
-    related: ['咬合穿插', '几何构成', '力量感'],
+    category2: '地域文化',
+    description: '融合上海本地文化与中西元素的室内设计风格。常见设计手法包括采用Art Deco几何线条、石库门建筑元素。',
+    related: ['石库门', '马赛克拼花', '红木家具'],
     mainImage: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&q=80&w=800',
   }
 ];
@@ -28,7 +28,7 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(false);
   const [selectedCard, setSelectedCard] = useState(null);
   const [selectedBoardItem, setSelectedBoardItem] = useState(null);
-  const [vocabularyCards, setVocabularyCards] = useState(FALLBACK_VOCABULARY); // 初始使用预设数据
+  const [vocabularyCards, setVocabularyCards] = useState(FALLBACK_VOCABULARY); 
   const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
   const [feedback, setFeedback] = useState({ message: null, type: 'success' }); 
   
@@ -44,24 +44,25 @@ export default function App() {
   // --- 自动加载本地数据库 (data.json) ---
   useEffect(() => {
     const loadLocalData = async () => {
-      try {
-        // 改进后的 fetch 逻辑，增加对环境路径的兼容性处理
-        const dataPath = 'src/data.json';
-        const response = await fetch(dataPath).catch(() => null);
-        
-        if (response && response.ok) {
-          const data = await response.json();
-          if (Array.isArray(data) && data.length > 0) {
-            setVocabularyCards(data);
-            console.log(`✅ 成功加载本地数据库，共计 ${data.length} 条语汇。`);
+      // 尝试加载可能存在的路径
+      const possiblePaths = ['./src/data.json', 'src/data.json', './data.json', 'data.json'];
+      
+      for (const path of possiblePaths) {
+        try {
+          const response = await fetch(path);
+          if (response.ok) {
+            const data = await response.json();
+            if (Array.isArray(data) && data.length > 0) {
+              setVocabularyCards(data);
+              console.log(`✅ 成功从 ${path} 加载数据库，共 ${data.length} 条语汇。`);
+              return; // 加载成功则退出循环
+            }
           }
-        } else {
-          console.warn('⚠️ 无法访问 ./src/data.json。这在预览模式下是正常的，应用将使用预设数据。');
+        } catch (err) {
+          // 继续尝试下一个路径
         }
-      } catch (err) {
-        // 捕捉 URL 解析错误或其他异常
-        console.warn('数据加载被拦截或路径无效。预览模式将维持默认展示。');
       }
+      console.warn('⚠️ 无法访问本地数据库文件，将维持预设展示。');
     };
     loadLocalData();
   }, []);
@@ -179,9 +180,9 @@ export default function App() {
               {vocabularyCards.map(card => (
                 <div key={card.id || card.title} onClick={() => setSelectedCard(card)} className={`break-inside-avoid group cursor-pointer overflow-hidden rounded-[32px] border-2 transition-all duration-500 ${darkMode ? 'bg-zinc-900 border-zinc-800 hover:border-indigo-500 shadow-2xl' : 'bg-white border-zinc-100 hover:border-black shadow-sm'}`}>
                   <div className="aspect-[4/5] overflow-hidden relative bg-zinc-100 dark:bg-zinc-950 flex items-center justify-center">
-                    <img src={card.mainImage} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
+                    <img src={card.mainImage || 'https://images.unsplash.com/photo-1513161455079-7dc1de15ef3e?q=80&w=800'} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
                     <div className="absolute top-5 left-5 px-3 py-1 bg-black/60 backdrop-blur-md text-[9px] font-bold text-white rounded-full uppercase tracking-widest">
-                      {card.category1} / {card.category2}
+                      {card.category1} {card.category2 ? `/ ${card.category2}` : ''}
                     </div>
                   </div>
                   <div className="p-6 flex justify-between items-center">
@@ -541,11 +542,11 @@ function DetailModal({ card, onClose, darkMode, onAddToBoard }) {
     <div onClick={onClose} className="fixed inset-0 z-[100] flex items-center justify-center p-4 backdrop-blur-md bg-black/80">
       <div onClick={(e) => e.stopPropagation()} className={`relative w-full max-w-5xl h-[80vh] overflow-hidden rounded-[48px] flex flex-col md:flex-row shadow-2xl ${darkMode ? 'bg-zinc-900 border border-zinc-800' : 'bg-white'}`}>
         <button className="absolute right-8 top-8 p-3 hover:bg-black/10 rounded-full z-20" onClick={onClose}><X size={24}/></button>
-        <div className="md:w-[60%] bg-black flex items-center justify-center overflow-hidden"><img src={card.mainImage} className="max-w-full max-h-full object-contain" alt="" /></div>
+        <div className="md:w-[60%] bg-black flex items-center justify-center overflow-hidden"><img src={card.mainImage || 'https://images.unsplash.com/photo-1513161455079-7dc1de15ef3e?q=80&w=800'} className="max-w-full max-h-full object-contain" alt="" /></div>
         <div className="md:w-[40%] p-12 overflow-y-auto">
           <div className="flex gap-2 mb-4">
             <span className="px-3 py-1 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[10px] font-black rounded-lg uppercase">{card.category1}</span>
-            <span className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 text-[10px] font-black rounded-lg uppercase">{card.category2}</span>
+            {card.category2 && <span className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 text-[10px] font-black rounded-lg uppercase">{card.category2}</span>}
           </div>
           <h2 className="text-4xl font-black tracking-tighter mb-8 leading-[0.9]">{card.title}</h2>
           <p className="text-sm opacity-60 leading-relaxed mb-10 text-justify whitespace-pre-wrap">{card.description}</p>
@@ -575,7 +576,7 @@ function WhiteboardDetailModal({ item, onClose, onUpdate, darkMode }) {
     <div onClick={onClose} className="fixed inset-0 z-[110] flex items-center justify-center p-4 backdrop-blur-md bg-black/80">
       <div onClick={(e) => e.stopPropagation()} className={`relative w-full max-w-6xl h-[85vh] overflow-hidden rounded-[48px] flex flex-col md:flex-row shadow-2xl ${darkMode ? 'bg-zinc-900 border border-zinc-800' : 'bg-white'}`}>
         <button className="absolute right-8 top-8 p-3 hover:bg-black/10 rounded-full z-20" onClick={onClose}><X size={24}/></button>
-        <div className="md:w-[55%] bg-black flex items-center justify-center overflow-hidden">{item.type === 'text' ? <div className="p-20 text-white italic text-3xl font-black leading-relaxed text-center whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: item.content }} /> : <img src={item.mainImage} className="max-w-full max-h-full object-contain" alt="" />}</div>
+        <div className="md:w-[55%] bg-black flex items-center justify-center overflow-hidden">{item.type === 'text' ? <div className="p-20 text-white italic text-3xl font-black leading-relaxed text-center whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: item.content }} /> : <img src={item.mainImage || 'https://images.unsplash.com/photo-1513161455079-7dc1de15ef3e?q=80&w=800'} className="max-w-full max-h-full object-contain" alt="" />}</div>
         <div className="md:w-[45%] p-12 overflow-y-auto border-l dark:border-zinc-800">
           <div className="flex items-center gap-2 mb-6 text-indigo-500 font-black text-[10px] uppercase tracking-widest"><Edit3 size={14}/> {item.isLibraryItem ? 'Property Detail' : 'Edit Layer'}</div>
           <div className="space-y-10">
@@ -601,7 +602,7 @@ function WhiteboardDetailModal({ item, onClose, onUpdate, darkMode }) {
             
             <div className="opacity-50">
               <label className="text-[10px] font-black text-zinc-400 mb-1 block uppercase">分类索引</label>
-              <p className="text-xs font-bold tracking-tight">{item.category1} / {item.category2}</p>
+              <p className="text-xs font-bold tracking-tight">{item.category1} {item.category2 ? `/ ${item.category2}` : ''}</p>
             </div>
           </div>
         </div>
