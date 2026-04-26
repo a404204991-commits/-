@@ -28,26 +28,35 @@ export default function App() {
   const [redoStack, setRedoStack] = useState([]);
 
   // --- 新增：CSV 自动读取与解析逻辑 ---
-  useEffect(() => {
+ useEffect(() => {
     const fetchAndParseCSV = async () => {
       try {
-        // 读取根目录下的 CSV 文件
-        const response = await fetch('./vocabulary.csv');
-        const reader = response.body.getReader();
-        const result = await reader.read();
-        const decoder = new TextDecoder('utf-8');
-        const csvText = decoder.decode(result.value);
+        // 1. 使用 Vite 的全局基础路径，确保线上环境能找到文件
+        const baseUrl = import.meta.env.BASE_URL || '/';
+        const fileUrl = `${baseUrl}vocabulary.csv`;
+        console.log("🔍 [Debug] 尝试请求CSV文件路径:", fileUrl);
 
-        // 简单的解析 CSV 逻辑
-        const lines = csvText.split('\n').filter(line => line.trim() !== '');
-        const headers = lines[0].split(',');
+        // 2. 发起请求，增加对非 200 状态码的拦截
+        const response = await fetch(fileUrl);
+        if (!response.ok) {
+          throw new Error(`服务器返回错误状态码: ${response.status}`);
+        }
+
+        // 3. 使用 text() 直接读取，比之前使用 reader 的方式兼容性更好
+        const csvText = await response.text();
+        console.log("✅ [Debug] 成功读取CSV文件，文件长度:", csvText.length);
+
+        // 4. 解析 CSV（兼容 Windows \r\n 和 Mac/Linux \n 换行符）
+        const lines = csvText.split(/\r?\n/).filter(line => line.trim() !== '');
         
+        if (lines.length <= 1) {
+          throw new Error("CSV文件内容为空或只有表头");
+        }
+
         const parsedData = lines.slice(1).map((line, index) => {
-          // 处理 CSV 字段（考虑引号内的逗号）
+          // 处理 CSV 字段，防止某些行格式异常导致整个页面崩溃
           const values = line.match(/(".*?"|[^,]+)(?=\s*,|\s*$)/g) || [];
           const cleanValues = values.map(v => v.replace(/^"|"$/g, '').trim());
-
-          // 映射到 App 内部数据结构
           const tags = cleanValues[4] ? cleanValues[4].split(/[，,]/) : [];
           
           return {
@@ -56,18 +65,18 @@ export default function App() {
             title: cleanValues[0] || '未知语汇',
             category: cleanValues[1] || '未分类',
             description: cleanValues[3] || '暂无描述',
-            // 将关联语汇拆分为氛围和形态（各取一部分作为示例）
             atmosphere: tags.slice(0, 3),
             morphology: tags.slice(3, 6),
             mainImage: cleanValues[6] || 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&q=80&w=800',
           };
         });
 
+        console.log("✅ [Debug] 成功解析生成的卡片数量:", parsedData.length);
         setVocabularyCards(parsedData);
         setIsLoading(false);
       } catch (error) {
-        console.error("加载 CSV 失败:", error);
-        setFeedback({ message: "数据库加载失败", type: "error" });
+        console.error("❌ [Debug] 加载或解析 CSV 失败:", error);
+        setFeedback({ message: `数据库加载失败: ${error.message}`, type: "error" });
         setIsLoading(false);
       }
     };
