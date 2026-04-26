@@ -1,70 +1,78 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Search, Home, BookOpen, ImageIcon, Palette, Upload, Plus, X, Moon, Sun, 
   Maximize2, Share2, Sparkles, Loader2, Wand2, Trash2, Copy, CheckSquare,
   Type, MousePointer2, ImageOff, ZoomIn, ZoomOut, RotateCcw, Hand, CheckCircle2, AlertCircle, Edit3,
-  Undo2, Redo2, ClipboardPaste, ImagePlus, FileJson, FileSpreadsheet
+  Undo2, Redo2, ClipboardPaste, ImagePlus
 } from 'lucide-react';
 
 const apiKey = ""; 
 const GEN_MODEL = "gemini-2.5-flash-preview-09-2025";
-
-// 定义预设回退数据，作为数据库加载前的缓冲
-const FALLBACK_VOCABULARY = [
-  {
-    id: 'v1',
-    type: 'vocabulary',
-    title: '海派风格',
-    category1: '设计风格',
-    category2: '地域文化',
-    description: '融合上海本地文化与中西元素的室内设计风格。常见设计手法包括采用Art Deco几何线条、石库门建筑元素。',
-    related: ['石库门', '马赛克拼花', '红木家具'],
-    mainImage: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&q=80&w=800',
-  }
-];
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('discovery');
   const [darkMode, setDarkMode] = useState(false);
   const [selectedCard, setSelectedCard] = useState(null);
   const [selectedBoardItem, setSelectedBoardItem] = useState(null);
-  const [vocabularyCards, setVocabularyCards] = useState(FALLBACK_VOCABULARY); 
+  
+  // --- 状态修改：初始化为空，增加加载状态 ---
+  const [vocabularyCards, setVocabularyCards] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
   const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
   const [feedback, setFeedback] = useState({ message: null, type: 'success' }); 
   
-  // 白板相关状态
   const [boardItems, setBoardItems] = useState([]); 
   const [boardView, setBoardView] = useState({ x: 0, y: 0, scale: 1 });
   const [history, setHistory] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
 
-  // 侧边栏状态
-  const [sidebarHovered, setSidebarHovered] = useState(false);
-
-  // --- 自动加载本地数据库 (data.json) ---
+  // --- 新增：CSV 自动读取与解析逻辑 ---
   useEffect(() => {
-    const loadLocalData = async () => {
-      // 尝试加载可能存在的路径
-      const possiblePaths = ['./src/data.json', 'src/data.json', './data.json', 'data.json'];
-      
-      for (const path of possiblePaths) {
-        try {
-          const response = await fetch(path);
-          if (response.ok) {
-            const data = await response.json();
-            if (Array.isArray(data) && data.length > 0) {
-              setVocabularyCards(data);
-              console.log(`✅ 成功从 ${path} 加载数据库，共 ${data.length} 条语汇。`);
-              return; // 加载成功则退出循环
-            }
-          }
-        } catch (err) {
-          // 继续尝试下一个路径
-        }
+    const fetchAndParseCSV = async () => {
+      try {
+        // 读取根目录下的 CSV 文件
+        const response = await fetch('./vocabulary.csv');
+        const reader = response.body.getReader();
+        const result = await reader.read();
+        const decoder = new TextDecoder('utf-8');
+        const csvText = decoder.decode(result.value);
+
+        // 简单的解析 CSV 逻辑
+        const lines = csvText.split('\n').filter(line => line.trim() !== '');
+        const headers = lines[0].split(',');
+        
+        const parsedData = lines.slice(1).map((line, index) => {
+          // 处理 CSV 字段（考虑引号内的逗号）
+          const values = line.match(/(".*?"|[^,]+)(?=\s*,|\s*$)/g) || [];
+          const cleanValues = values.map(v => v.replace(/^"|"$/g, '').trim());
+
+          // 映射到 App 内部数据结构
+          const tags = cleanValues[4] ? cleanValues[4].split(/[，,]/) : [];
+          
+          return {
+            id: `v-${index}`,
+            type: 'vocabulary',
+            title: cleanValues[0] || '未知语汇',
+            category: cleanValues[1] || '未分类',
+            description: cleanValues[3] || '暂无描述',
+            // 将关联语汇拆分为氛围和形态（各取一部分作为示例）
+            atmosphere: tags.slice(0, 3),
+            morphology: tags.slice(3, 6),
+            mainImage: cleanValues[6] || 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&q=80&w=800',
+          };
+        });
+
+        setVocabularyCards(parsedData);
+        setIsLoading(false);
+      } catch (error) {
+        console.error("加载 CSV 失败:", error);
+        setFeedback({ message: "数据库加载失败", type: "error" });
+        setIsLoading(false);
       }
-      console.warn('⚠️ 无法访问本地数据库文件，将维持预设展示。');
     };
-    loadLocalData();
+
+    fetchAndParseCSV();
   }, []);
 
   // --- 样式注入 ---
@@ -74,14 +82,11 @@ export default function App() {
       .custom-grab { cursor: grab !important; }
       .custom-grabbing { cursor: grabbing !important; }
       .editable-text { cursor: text !important; }
-      .no-scroll { overflow: hidden; }
-      * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
     `;
     document.head.appendChild(style);
     return () => document.head.removeChild(style);
   }, []);
 
-  // --- 白板历史记录 ---
   const saveSnapshot = useCallback((items) => {
     setHistory(prev => [JSON.parse(JSON.stringify(items)), ...prev].slice(0, 31));
     setRedoStack([]); 
@@ -93,6 +98,8 @@ export default function App() {
       setRedoStack(prev => [JSON.parse(JSON.stringify(boardItems)), ...prev]);
       setBoardItems(previous);
       setHistory(prev => prev.slice(1));
+      setFeedback({ message: "已撤销操作", type: "success" });
+      setTimeout(() => setFeedback({ message: null }), 1000);
     }
   }, [history, boardItems]);
 
@@ -102,19 +109,23 @@ export default function App() {
       setHistory(prev => [JSON.parse(JSON.stringify(boardItems)), ...prev]);
       setBoardItems(next);
       setRedoStack(prev => prev.slice(1));
+      setFeedback({ message: "已还原操作", type: "success" });
+      setTimeout(() => setFeedback({ message: null }), 1000);
     }
   }, [redoStack, boardItems]);
 
   const addToBoard = (card) => {
     if (boardItems.some(item => item.id === card.id)) {
       setFeedback({ message: `"${card.title}" 已在白板中`, type: 'error' });
-      setTimeout(() => setFeedback({ message: null }), 2000);
+      setTimeout(() => setFeedback({ message: null, type: 'success' }), 2000);
       return;
     }
     const maxZ = Math.max(0, ...boardItems.map(i => i.zIndex || 0));
     const newItem = {
       boardId: `board-${Date.now()}`,
       ...card,
+      atmosphere: card.atmosphere || [],
+      morphology: card.morphology || [],
       x: (window.innerWidth / 2 - boardView.x) / boardView.scale - 104, 
       y: (window.innerHeight / 2 - boardView.y) / boardView.scale - 170,
       zIndex: maxZ + 1,
@@ -126,7 +137,7 @@ export default function App() {
     saveSnapshot(boardItems);
     setBoardItems([...boardItems, newItem]);
     setFeedback({ message: `已添加 "${card.title}"`, type: 'success' });
-    setTimeout(() => setFeedback({ message: null }), 2000);
+    setTimeout(() => setFeedback({ message: null, type: 'success' }), 2000);
   };
 
   const isMoodboardMode = activeTab === 'moodboard';
@@ -142,58 +153,25 @@ export default function App() {
         </div>
       )}
 
-      <aside 
-        onMouseEnter={() => setSidebarHovered(true)}
-        onMouseLeave={() => setSidebarHovered(false)}
-        className={`fixed left-0 top-0 h-full border-r ${darkMode ? 'border-zinc-800 bg-black' : 'border-zinc-100 bg-white'} py-8 z-50 flex flex-col transition-all duration-300 ease-in-out overflow-hidden shadow-2xl ${sidebarHovered ? 'w-64' : 'w-16'}`}
-      >
-        <div onClick={() => setActiveTab('discovery')} className="flex items-center w-full mb-12 cursor-pointer transition-all px-3">
-          <div className="w-10 h-10 bg-indigo-600 rounded-xl flex-none flex items-center justify-center font-black text-white shadow-lg shadow-indigo-500/20">ID</div>
-          <h1 className={`ml-4 font-bold text-sm tracking-tighter transition-all duration-300 whitespace-nowrap text-indigo-500 uppercase ${sidebarHovered ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>Interior Database</h1>
+      {/* 侧边导航 */}
+      <aside className={`fixed left-0 top-0 h-full border-r ${darkMode ? 'border-zinc-800 bg-black' : 'border-zinc-100 bg-white'} py-8 z-40 hidden md:flex flex-col transition-all duration-300 ease-in-out group/sidebar overflow-hidden w-16 hover:w-64 shadow-2xl`}>
+        <div onClick={() => setActiveTab('discovery')} className="flex items-center w-full mb-12 whitespace-nowrap cursor-pointer hover:opacity-80 active:scale-95 transition-all">
+          <div className="w-16 flex-none flex items-center justify-center"><div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center font-black text-white shadow-lg shadow-indigo-500/20">ID</div></div>
+          <h1 className="font-bold text-lg tracking-tighter transition-all duration-300 opacity-0 invisible group-hover/sidebar:opacity-100 group-hover/sidebar:visible text-indigo-500 uppercase">Design Database</h1>
         </div>
-        
-        <nav className="space-y-2 w-full px-2">
-          <NavItem icon={<Home size={20}/>} label="发现" active={activeTab === 'discovery'} onClick={() => setActiveTab('discovery')} collapsed={!sidebarHovered} />
-          <NavItem icon={<BookOpen size={20}/>} label="设计语汇" active={activeTab === 'vocabulary'} onClick={() => setActiveTab('vocabulary')} collapsed={!sidebarHovered} />
-          <NavItem icon={<Palette size={20}/>} label="情绪白板" active={activeTab === 'moodboard'} onClick={() => setActiveTab('moodboard')} collapsed={!sidebarHovered} />
+        <nav className="space-y-2 w-full">
+          <NavItem icon={<Home size={20}/>} label="发现" active={activeTab === 'discovery'} onClick={() => setActiveTab('discovery')} />
+          <NavItem icon={<BookOpen size={20}/>} label="设计语汇" active={activeTab === 'vocabulary'} onClick={() => setActiveTab('vocabulary')} />
+          <NavItem icon={<Palette size={20}/>} label="情绪白板" active={activeTab === 'moodboard'} onClick={() => setActiveTab('moodboard')} />
         </nav>
-
-        <div className="mt-auto space-y-4 px-2">
-          <button onClick={() => setDarkMode(!darkMode)} className={`w-full h-12 flex items-center rounded-2xl transition-all duration-300 ${darkMode ? 'text-zinc-400 hover:bg-zinc-900' : 'text-zinc-500 hover:bg-zinc-50'}`}>
-            <div className="w-12 flex-none flex items-center justify-center">{darkMode ? <Sun size={18}/> : <Moon size={18}/>}</div>
-            <span className={`whitespace-nowrap text-sm font-black transition-all duration-300 ${sidebarHovered ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>{darkMode ? '浅色模式' : '深色模式'}</span>
-          </button>
-        </div>
+        <button onClick={() => setDarkMode(!darkMode)} className={`absolute bottom-10 left-0 w-full h-12 flex items-center transition-all duration-300 ${darkMode ? 'text-zinc-400 hover:text-white' : 'text-zinc-500 hover:text-black'}`}>
+          <div className="w-16 flex-none flex items-center justify-center">{darkMode ? <Sun size={18}/> : <Moon size={18}/>}</div>
+          <span className="whitespace-nowrap text-sm font-black transition-all duration-300 opacity-0 invisible group-hover/sidebar:opacity-100 group-hover/sidebar:visible">切换外观</span>
+        </button>
       </aside>
 
-      <main className={`transition-all duration-300 pl-16 ${isMoodboardMode ? 'h-screen' : 'pt-16 min-h-screen'}`}>
-        {!isMoodboardMode ? (
-          <div className="p-10 max-w-[1600px] mx-auto">
-             <header className="mb-12 flex flex-col md:flex-row md:items-center justify-between gap-6">
-               <h2 className="text-3xl font-black tracking-tighter uppercase italic text-indigo-600">{activeTab === 'discovery' ? '今日发现' : '语汇库检索'}</h2>
-               <div className="max-w-xl relative w-full">
-                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                 <input type="text" placeholder="检索设计灵感..." className={`w-full py-4 pl-12 pr-6 rounded-3xl text-sm outline-none border-2 transition-all ${darkMode ? 'bg-zinc-900 border-zinc-800 focus:border-indigo-500' : 'bg-zinc-50 border-transparent focus:bg-white focus:border-black'}`} />
-               </div>
-            </header>
-            <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-6 space-y-6">
-              {vocabularyCards.map(card => (
-                <div key={card.id || card.title} onClick={() => setSelectedCard(card)} className={`break-inside-avoid group cursor-pointer overflow-hidden rounded-[32px] border-2 transition-all duration-500 ${darkMode ? 'bg-zinc-900 border-zinc-800 hover:border-indigo-500 shadow-2xl' : 'bg-white border-zinc-100 hover:border-black shadow-sm'}`}>
-                  <div className="aspect-[4/5] overflow-hidden relative bg-zinc-100 dark:bg-zinc-950 flex items-center justify-center">
-                    <img src={card.mainImage || 'https://images.unsplash.com/photo-1513161455079-7dc1de15ef3e?q=80&w=800'} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
-                    <div className="absolute top-5 left-5 px-3 py-1 bg-black/60 backdrop-blur-md text-[9px] font-bold text-white rounded-full uppercase tracking-widest">
-                      {card.category1} {card.category2 ? `/ ${card.category2}` : ''}
-                    </div>
-                  </div>
-                  <div className="p-6 flex justify-between items-center">
-                    <h3 className="font-black text-xl tracking-tight truncate">{card.title}</h3>
-                    <button onClick={(e) => { e.stopPropagation(); addToBoard(card); }} className="p-3 hover:bg-indigo-500 hover:text-white dark:bg-zinc-800 rounded-2xl transition-all"><Copy size={18} /></button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
+      <main className={`transition-all duration-300 md:pl-16 ${isMoodboardMode ? 'h-screen' : 'pt-16 min-h-screen'}`}>
+        {isMoodboardMode ? (
           <MoodBoard 
             items={boardItems} setItems={setBoardItems} 
             view={boardView} setView={setBoardView} 
@@ -202,419 +180,41 @@ export default function App() {
             undo={handleUndo} redo={handleRedo} saveSnapshot={saveSnapshot}
             history={history} redoStack={redoStack}
           />
+        ) : (
+          <div className="p-10 max-w-[1600px] mx-auto text-center md:text-left">
+             <header className="mb-12 header-title flex flex-col md:flex-row md:items-center justify-between gap-6">
+               <h2 className="text-3xl font-black tracking-tighter uppercase italic text-indigo-600">
+                {activeTab === 'discovery' ? '今日发现' : '语汇库检索'}
+               </h2>
+               <div className="max-w-xl relative w-full"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} /><input type="text" placeholder="检索设计灵感..." className={`w-full py-4 pl-12 pr-6 rounded-3xl text-sm outline-none border-2 transition-all ${darkMode ? 'bg-zinc-900 border-zinc-800 focus:border-indigo-500' : 'bg-zinc-50 border-transparent focus:bg-white focus:border-black'}`} /></div>
+            </header>
+            
+            {/* 内容渲染区域：增加加载状态显示 */}
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center py-40 gap-4">
+                <Loader2 className="animate-spin text-indigo-500" size={40} />
+                <p className="text-xs font-bold tracking-widest text-zinc-400 uppercase">加载语汇数据库...</p>
+              </div>
+            ) : (
+              <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-6 space-y-6">
+                {vocabularyCards.map(card => (
+                  <div key={card.id} onClick={() => setSelectedCard(card)} className={`break-inside-avoid group cursor-pointer overflow-hidden rounded-[32px] border-2 transition-all duration-500 ${darkMode ? 'bg-zinc-900 border-zinc-800 hover:border-indigo-500 shadow-2xl shadow-black' : 'bg-white border-zinc-100 hover:border-black shadow-sm'}`}>
+                    <div className="aspect-[4/5] overflow-hidden relative bg-zinc-100 dark:bg-zinc-950 flex items-center justify-center">
+                      <img src={card.mainImage} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
+                      <div className="absolute top-5 left-5 px-3 py-1 bg-black/60 backdrop-blur-md text-[9px] font-bold text-white rounded-full uppercase tracking-widest">{card.category}</div>
+                    </div>
+                    <div className="p-6 flex justify-between items-center">
+                      <h3 className="font-black text-xl tracking-tight truncate">{card.title}</h3>
+                      <button onClick={(e) => { e.stopPropagation(); addToBoard(card); }} className="p-3 hover:bg-indigo-500 hover:text-white dark:bg-zinc-800 rounded-2xl transition-all">
+                        <Copy size={18} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </main>
 
       {selectedCard && <DetailModal card={selectedCard} onClose={() => setSelectedCard(null)} darkMode={darkMode} onAddToBoard={addToBoard} />}
-      {selectedBoardItem && (
-        <WhiteboardDetailModal 
-          item={selectedBoardItem} 
-          onClose={() => { saveSnapshot(boardItems); setSelectedBoardItem(null); }} 
-          onUpdate={(updates) => setBoardItems(prev => prev.map(it => it.boardId === selectedBoardItem.boardId ? {...it, ...updates} : it))} 
-          darkMode={darkMode} 
-        />
-      )}
-    </div>
-  );
-}
-
-function NavItem({ icon, label, active, onClick, collapsed }) {
-  return (
-    <button onClick={onClick} className={`w-full flex items-center transition-all duration-300 h-12 relative overflow-hidden group/item ${active ? 'text-white' : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-900 rounded-2xl'}`}>
-      <div className={`absolute inset-0 rounded-2xl transition-all duration-300 ${active ? 'bg-indigo-500 shadow-lg shadow-indigo-500/30' : 'bg-transparent'}`} />
-      <div className="relative w-12 flex-none flex items-center justify-center">{icon}</div>
-      <span className={`relative whitespace-nowrap text-sm font-black transition-all duration-300 ml-2 ${collapsed ? 'opacity-0 invisible' : 'opacity-100 visible'}`}>{label}</span>
-    </button>
-  );
-}
-
-function MoodBoard({ items, setItems, view, setView, darkMode, setIsAiAnalyzing, onOpenDetail, undo, redo, saveSnapshot, history, redoStack }) {
-  const [selectionBox, setSelectionBox] = useState(null); 
-  const [isSpacePressed, setIsSpacePressed] = useState(false);
-  const [contextMenu, setContextMenu] = useState(null);
-  const [internalClipboard, setInternalClipboard] = useState([]);
-  const boardRef = useRef(null);
-  const fileInputRef = useRef(null);
-  const mousePos = useRef({ x: 0, y: 0 });
-
-  const isUserTyping = () => {
-    const el = document.activeElement;
-    return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
-  };
-
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (isUserTyping()) return;
-      const ctrlKey = e.metaKey || e.ctrlKey;
-      if (ctrlKey && e.key === 'z') { e.preventDefault(); undo(); }
-      if (ctrlKey && e.key === 'y') { e.preventDefault(); redo(); }
-      if ((e.key === 'Delete' || e.key === 'Backspace')) {
-        const selected = items.filter(i => i.isSelected);
-        if (selected.length > 0) { saveSnapshot(items); setItems(items.filter(item => !item.isSelected)); }
-      }
-      if (ctrlKey && e.key === 'c') {
-        const selected = items.filter(i => i.isSelected);
-        if (selected.length > 0) setInternalClipboard(JSON.parse(JSON.stringify(selected)));
-      }
-    };
-    const handlePaste = (e) => {
-      const clipboardItems = e.clipboardData?.items;
-      if (!clipboardItems) return;
-      for (let item of clipboardItems) {
-        if (item.type.indexOf("image") !== -1) {
-          const blob = item.getAsFile();
-          const reader = new FileReader();
-          reader.onload = (event) => addNewImage(event.target.result, mousePos.current.x, mousePos.current.y);
-          reader.readAsDataURL(blob);
-        } else if (item.type.indexOf("plain") !== -1) {
-          item.getAsString((text) => {
-            if (text.startsWith("http")) addNewImage(text, mousePos.current.x, mousePos.current.y);
-            else addNewText(text, mousePos.current.x, mousePos.current.y);
-          });
-        }
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('paste', handlePaste);
-    return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('paste', handlePaste); };
-  }, [items, undo, redo, saveSnapshot, setItems, view]);
-
-  const addNewImage = (src, rawX, rawY) => {
-    const rect = boardRef.current.getBoundingClientRect();
-    const x = (rawX - rect.left - view.x) / view.scale - 104; 
-    const y = (rawY - rect.top - view.y) / view.scale - 170;  
-    const maxZ = Math.max(0, ...items.map(i => i.zIndex || 0));
-    const newItem = { boardId: `img-${Date.now()}`, type: 'vocabulary', title: '粘贴的图片', category1: '自定义', category2: '外部导入', mainImage: src, x, y, zIndex: maxZ + 1, isSelected: false, w: 208, h: 340 };
-    saveSnapshot(items);
-    setItems([...items, newItem]);
-  };
-
-  const addNewText = (content = "", rawX, rawY) => {
-    const rect = boardRef.current.getBoundingClientRect();
-    const x = rawX !== undefined ? (rawX - rect.left - view.x) / view.scale - 50 : (rect.width / 2 - view.x) / view.scale - 50;
-    const y = rawY !== undefined ? (rawY - rect.top - view.y) / view.scale - 20 : (rect.height / 2 - view.y) / view.scale - 20;
-    const maxZ = Math.max(0, ...items.map(i => i.zIndex || 0));
-    const newItem = { boardId: `txt-${Date.now()}`, id: `custom-txt-${Date.now()}`, type: 'text', content, x, y, zIndex: maxZ + 1, isSelected: false, isFresh: true, w: 100, h: 40 };
-    saveSnapshot(items);
-    setItems([...items, newItem]);
-  };
-
-  useEffect(() => {
-    const move = (e) => { mousePos.current = { x: e.clientX, y: e.clientY }; };
-    const down = (e) => { if (!isUserTyping() && e.code === 'Space') { e.preventDefault(); setIsSpacePressed(true); } };
-    const up = (e) => { if (e.code === 'Space') setIsSpacePressed(false); };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('keydown', down);
-    window.addEventListener('keyup', up);
-    return () => { window.removeEventListener('mousemove', move); window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
-  }, []);
-
-  const onBoardMouseDown = (e) => {
-    setContextMenu(null);
-    if (e.button !== 0 && e.button !== 1) return;
-    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-    const isPanning = isSpacePressed || e.button === 1;
-    const startX = e.clientX;
-    const startY = e.clientY;
-
-    if (isPanning) {
-      e.preventDefault();
-      const initialViewX = view.x;
-      const initialViewY = view.y;
-      const onMouseMove = (mE) => setView(prev => ({ ...prev, x: initialViewX + (mE.clientX - startX), y: initialViewY + (mE.clientY - startY) }));
-      const onMouseUp = () => { window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onMouseUp); };
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseUp);
-    } else if (e.target === boardRef.current) {
-      if (!e.shiftKey) setItems(prev => prev.map(it => ({ ...it, isSelected: false })));
-      const rect = boardRef.current.getBoundingClientRect();
-      const canvasStartX = (startX - rect.left - view.x) / view.scale;
-      const canvasStartY = (startY - rect.top - view.y) / view.scale;
-      setSelectionBox({ x: canvasStartX, y: canvasStartY, w: 0, h: 0 });
-      const onMouseMove = (mE) => {
-        const curX = (mE.clientX - rect.left - view.x) / view.scale;
-        const curY = (mE.clientY - rect.top - view.y) / view.scale;
-        const box = { x: Math.min(canvasStartX, curX), y: Math.min(canvasStartY, curY), w: Math.abs(curX - canvasStartX), h: Math.abs(curY - canvasStartY) };
-        setSelectionBox(box);
-        setItems(prev => prev.map(item => {
-          const itemW = item.w || 100;
-          const itemH = item.h || 40;
-          const isOverlapping = !(item.x + itemW < box.x || item.x > box.x + box.w || item.y + itemH < box.y || item.y > box.y + box.h);
-          return { ...item, isSelected: isOverlapping };
-        }));
-      };
-      const onMouseUp = () => { setSelectionBox(null); window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onMouseUp); };
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseUp);
-    }
-  };
-
-  const aggregatedTags = useMemo(() => {
-    const selected = items.filter(i => i.isSelected);
-    const tags = selected.flatMap(i => [
-      i.category2,
-      ...(Array.isArray(i.related) ? i.related : [])
-    ]).filter(t => t && t !== '外部导入');
-    return [...new Set(tags)];
-  }, [items]);
-
-  return (
-    <div className={`flex h-full relative ${isSpacePressed ? 'custom-grab' : ''}`} onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY }); }}>
-      <div 
-        ref={boardRef} onMouseDown={onBoardMouseDown} 
-        onDoubleClick={(e) => { if (e.target === boardRef.current) addNewText("", e.clientX, e.clientY); }}
-        onWheel={(e) => {
-          e.preventDefault();
-          const factor = 1 + (e.deltaY > 0 ? -1 : 1) * 0.15;
-          const newScale = Math.min(Math.max(view.scale * factor, 0.15), 5);
-          const rect = boardRef.current.getBoundingClientRect();
-          const canvasX = (e.clientX - rect.left - view.x) / view.scale;
-          const canvasY = (e.clientY - rect.top - view.y) / view.scale;
-          setView({ x: (e.clientX - rect.left) - canvasX * newScale, y: (e.clientY - rect.top) - canvasY * newScale, scale: newScale });
-        }} 
-        className={`flex-1 relative overflow-hidden transition-colors ${darkMode ? 'bg-zinc-950' : 'bg-zinc-50'}`} 
-        style={{ backgroundImage: darkMode ? 'radial-gradient(#333 1px, transparent 1px)' : 'radial-gradient(#ddd 1px, transparent 1px)', backgroundSize: `${40 * view.scale}px ${40 * view.scale}px`, backgroundPosition: `${view.x}px ${view.y}px` }}
-      >
-        <div className="absolute inset-0 pointer-events-none" style={{ transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.scale})`, transformOrigin: '0 0' }}>
-          {items.map((item) => (
-            <BoardItem 
-              key={item.boardId} item={item} darkMode={darkMode} 
-              onMove={(id, dx, dy) => {
-                setItems(prev => {
-                  const target = prev.find(it => it.boardId === id);
-                  const moveSelection = target?.isSelected;
-                  return prev.map(i => (i.boardId === id || (moveSelection && i.isSelected)) ? { 
-                    ...i, x: i.x + dx / view.scale, y: i.y + dy / view.scale 
-                  } : i);
-                });
-              }}
-              onMoveEnd={() => saveSnapshot(items)}
-              onSelect={(id, multi) => {
-                setItems(prev => {
-                  const target = prev.find(it => it.boardId === id);
-                  const maxZ = Math.max(0, ...prev.map(i => i.zIndex || 0));
-                  if (multi) return prev.map(it => it.boardId === id ? { ...it, isSelected: !it.isSelected, zIndex: maxZ + 1 } : it);
-                  if (target.isSelected) return prev;
-                  return prev.map(it => it.boardId === id ? { ...it, isSelected: true, zIndex: maxZ + 1 } : { ...it, isSelected: false });
-                });
-              }}
-              onDoubleClick={(id) => { const it = items.find(x => x.boardId === id); if (it.type !== 'text') onOpenDetail(it); }}
-              onTitleChange={(id, val) => setItems(prev => prev.map(it => it.boardId === id ? { ...it, title: val } : it))}
-              onTextChange={(id, val) => {
-                if (items.find(x => x.boardId === id)?.type === 'text' && !val.trim()) {
-                  saveSnapshot(items); setItems(prev => prev.filter(it => it.boardId !== id));
-                } else {
-                  setItems(prev => prev.map(it => it.boardId === id ? { ...it, content: val, isFresh: false } : it));
-                }
-              }}
-              onSizeUpdate={(id, w, h) => setItems(prev => prev.map(it => it.boardId === id ? { ...it, w, h } : it))}
-            />
-          ))}
-          {selectionBox && <div className="absolute border-2 border-indigo-500 bg-indigo-500/10 z-[1000]" style={{ left: selectionBox.x, top: selectionBox.y, width: selectionBox.w, height: selectionBox.h }} />}
-        </div>
-        <div className="absolute top-6 left-6 z-20 flex items-center gap-3 pointer-events-none"><div className={`px-4 py-2 rounded-full border text-[10px] font-black tracking-widest ${darkMode ? 'bg-black border-zinc-800 text-indigo-400' : 'bg-white border-zinc-100 shadow-md text-indigo-600'}`}>{Math.round(view.scale * 100)}%</div></div>
-        <div className="absolute bottom-10 left-10 flex flex-col gap-2 z-30"><ControlButton icon={<Plus size={18}/>} onClick={() => addNewText()} darkMode={darkMode} title="插入语汇便签" /><ControlButton icon={<ZoomIn size={18}/>} onClick={() => setView(v => ({ ...v, scale: Math.min(v.scale * 1.2, 5) }))} darkMode={darkMode} /><ControlButton icon={<ZoomOut size={18}/>} onClick={() => setView(v => ({ ...v, scale: Math.max(v.scale / 1.2, 0.15) }))} darkMode={darkMode} /><ControlButton icon={<RotateCcw size={18}/>} onClick={() => setView({ x: 0, y: 0, scale: 1 })} darkMode={darkMode} /></div>
-      </div>
-
-      {contextMenu && (
-        <div className={`fixed z-[200] w-52 py-2 rounded-2xl shadow-2xl border ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-100'}`} style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(e) => e.stopPropagation()}>
-          <MenuOption icon={<ImagePlus size={16}/>} label="插入图片资产" onClick={() => { fileInputRef.current.click(); setContextMenu(null); }} darkMode={darkMode} />
-          <MenuOption icon={<Type size={16}/>} label="插入语汇便签" onClick={() => { addNewText("", contextMenu.x, contextMenu.y); setContextMenu(null); }} darkMode={darkMode} />
-          <div className="my-1 border-t dark:border-zinc-800 opacity-50" />
-          <MenuOption icon={<Undo2 size={16}/>} label="撤销 (Ctrl+Z)" onClick={() => { undo(); setContextMenu(null); }} darkMode={darkMode} disabled={history.length === 0} />
-          <MenuOption icon={<Redo2 size={16}/>} label="重做 (Ctrl+Y)" onClick={() => { redo(); setContextMenu(null); }} darkMode={darkMode} disabled={redoStack.length === 0} />
-        </div>
-      )}
-
-      <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => { const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onload = (ev) => addNewImage(ev.target.result, mousePos.current.x, mousePos.current.y); r.readAsDataURL(f); } }} />
-
-      <div className={`w-80 border-l p-8 flex flex-col ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-100'} select-auto`}>
-        <div className="flex items-center justify-between mb-8"><div className="flex items-center gap-2"><Sparkles size={20} className="text-indigo-600" /><h3 className="font-black text-xs uppercase tracking-widest italic">AI Synthesis</h3></div><button onClick={() => setItems(items.map(i => ({...i, isSelected: true})))} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg"><CheckSquare size={18} /></button></div>
-        <div className="flex-1 overflow-y-auto">
-          <section className="mb-10">
-            <h4 className="text-[10px] font-black text-zinc-400 mb-4 uppercase tracking-widest">聚合语汇</h4>
-            <div className="flex flex-wrap gap-2">
-              {aggregatedTags.length > 0 ? aggregatedTags.map(tag => (
-                <span key={tag} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border ${darkMode ? 'border-zinc-800 bg-zinc-800/50' : 'border-zinc-200 bg-zinc-50'}`}>{tag}</span>
-              )) : <p className="text-[10px] opacity-20 italic">框选卡片以分析语汇...</p>}
-            </div>
-          </section>
-          <section>
-            <h4 className="text-[10px] font-black text-zinc-400 mb-4 uppercase tracking-widest">AI 提示词</h4>
-            <div className={`p-5 rounded-[24px] border-2 border-dashed min-h-[140px] text-[11px] leading-relaxed italic ${darkMode ? 'bg-zinc-950 border-zinc-800 text-zinc-500' : 'bg-zinc-50 border-zinc-200 text-zinc-400'}`}>
-              {items.some(i => i.isSelected) ? `室内写实摄影, ${aggregatedTags.join(', ')}...` : "指令预览..."}
-            </div>
-            {items.some(i => i.isSelected) && <button className="w-full mt-6 py-4 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-indigo-500/20 flex items-center justify-center gap-2 transition-transform hover:scale-105 active:scale-95"><Wand2 size={16}/> 生成空间草图</button>}
-          </section>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function BoardItem({ item, darkMode, onMove, onMoveEnd, onSelect, onDoubleClick, onTitleChange, onTextChange, onSizeUpdate }) {
-  const [isDragging, setIsDragging] = useState(false);
-  const dragRef = useRef({ x: 0, y: 0 });
-  const containerRef = useRef(null);
-  const editableRef = useRef(null);
-
-  useEffect(() => {
-    if (containerRef.current) onSizeUpdate(item.boardId, containerRef.current.offsetWidth, containerRef.current.offsetHeight);
-  }, [item.content, item.title, item.type, item.isSelected]);
-
-  useEffect(() => {
-    if (item.type === 'text' && item.isFresh && editableRef.current) {
-      editableRef.current.focus();
-    }
-  }, [item.type, item.isFresh]);
-
-  const handleMouseDown = (e) => { 
-    if (e.button !== 0) return; 
-    onSelect(item.boardId, e.shiftKey || e.ctrlKey || e.metaKey); 
-    setIsDragging(true); 
-    dragRef.current = { x: e.clientX, y: e.clientY }; 
-    e.stopPropagation(); 
-  };
-
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      if (!isDragging) return;
-      onMove(item.boardId, e.clientX - dragRef.current.x, e.clientY - dragRef.current.y);
-      dragRef.current = { x: e.clientX, y: e.clientY };
-    };
-    const handleMouseUp = () => {
-      if (isDragging) onMoveEnd();
-      setIsDragging(false);
-    };
-    if (isDragging) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-    }
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDragging, onMove, onMoveEnd, item.boardId]);
-  
-  return (
-    <div 
-      ref={containerRef}
-      style={{ transform: `translate(${item.x}px, ${item.y}px)`, zIndex: (item.zIndex || 0) + (isDragging ? 1000 : 0), position: 'absolute', pointerEvents: 'auto' }}
-      onMouseDown={handleMouseDown} 
-      onDoubleClick={() => onDoubleClick(item.boardId)}
-      className={isDragging ? 'custom-grabbing' : 'custom-grab'}
-    >
-      <div className={`transition-[box-shadow,border-color,transform] transform-gpu ${item.type === 'text' ? 'w-fit' : 'w-52'} rounded-[32px] p-2 border-4 ${item.isSelected ? 'border-indigo-600 ring-8 ring-indigo-500/15 scale-[1.03] shadow-2xl' : 'border-transparent shadow-xl'} ${darkMode ? 'bg-zinc-900' : 'bg-white'}`}>
-        <div className="relative group flex flex-col items-center">
-          {item.type !== 'text' && (
-            <>
-              <div className="absolute top-3 left-3 px-2 py-0.5 bg-black/50 backdrop-blur-md text-[8px] font-bold text-white rounded uppercase tracking-tighter z-10">
-                {item.category1}
-              </div>
-              <div className="aspect-[4/5] w-full bg-zinc-100 dark:bg-zinc-800 rounded-[24px] overflow-hidden relative flex items-center justify-center">
-                {item.mainImage ? <img src={item.mainImage} className="w-full h-full object-cover pointer-events-none" alt="" /> : <ImageOff className="opacity-10" />}
-              </div>
-            </>
-          )}
-          <div className={`flex flex-col justify-center items-center w-full ${item.type === 'text' ? 'p-1' : 'p-4'}`}>
-            {item.type === 'text' ? (
-              <div 
-                ref={editableRef} contentEditable onBlur={(e) => onTextChange(item.boardId, e.target.innerText)}
-                onMouseDown={(e) => e.stopPropagation()}
-                className="bg-transparent text-xl font-black italic leading-tight outline-none border-none select-text p-1 min-w-[5em] text-center whitespace-pre-wrap break-all editable-text"
-                dangerouslySetInnerHTML={{ __html: item.content }}
-              />
-            ) : (
-              <div className="text-center w-full">
-                <input value={item.title} onChange={(e) => onTitleChange(item.boardId, e.target.value)} onMouseDown={e => e.stopPropagation()} className="w-full bg-transparent font-black text-xl outline-none border-none truncate select-text text-center" placeholder="名称" />
-                <p className="text-[9px] opacity-40 uppercase font-bold tracking-widest">{item.category2}</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DetailModal({ card, onClose, darkMode, onAddToBoard }) {
-  return (
-    <div onClick={onClose} className="fixed inset-0 z-[100] flex items-center justify-center p-4 backdrop-blur-md bg-black/80">
-      <div onClick={(e) => e.stopPropagation()} className={`relative w-full max-w-5xl h-[80vh] overflow-hidden rounded-[48px] flex flex-col md:flex-row shadow-2xl ${darkMode ? 'bg-zinc-900 border border-zinc-800' : 'bg-white'}`}>
-        <button className="absolute right-8 top-8 p-3 hover:bg-black/10 rounded-full z-20" onClick={onClose}><X size={24}/></button>
-        <div className="md:w-[60%] bg-black flex items-center justify-center overflow-hidden"><img src={card.mainImage || 'https://images.unsplash.com/photo-1513161455079-7dc1de15ef3e?q=80&w=800'} className="max-w-full max-h-full object-contain" alt="" /></div>
-        <div className="md:w-[40%] p-12 overflow-y-auto">
-          <div className="flex gap-2 mb-4">
-            <span className="px-3 py-1 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[10px] font-black rounded-lg uppercase">{card.category1}</span>
-            {card.category2 && <span className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 text-[10px] font-black rounded-lg uppercase">{card.category2}</span>}
-          </div>
-          <h2 className="text-4xl font-black tracking-tighter mb-8 leading-[0.9]">{card.title}</h2>
-          <p className="text-sm opacity-60 leading-relaxed mb-10 text-justify whitespace-pre-wrap">{card.description}</p>
-          
-          {card.related && card.related.length > 0 && (
-            <div className="mb-10">
-               <label className="text-[10px] font-black text-zinc-400 mb-3 block uppercase tracking-widest">关联语汇</label>
-               <div className="flex flex-wrap gap-2">
-                 {card.related.map(tag => (
-                   <span key={tag} className="px-3 py-1.5 border border-zinc-200 dark:border-zinc-700 rounded-lg text-[10px] font-black">{tag}</span>
-                 ))}
-               </div>
-            </div>
-          )}
-          
-          <button onClick={() => onAddToBoard(card)} className="w-full py-5 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white hover:bg-indigo-700 shadow-xl shadow-indigo-500/20 transition-all">加入情绪板</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function WhiteboardDetailModal({ item, onClose, onUpdate, darkMode }) {
-  const [newTag, setNewTag] = useState('');
-  const addTag = (type) => { if (!newTag.trim()) return; const currentTags = item[type] || []; if (!currentTags.includes(newTag)) onUpdate({ [type]: [...currentTags, newTag] }); setNewTag(''); };
-  return (
-    <div onClick={onClose} className="fixed inset-0 z-[110] flex items-center justify-center p-4 backdrop-blur-md bg-black/80">
-      <div onClick={(e) => e.stopPropagation()} className={`relative w-full max-w-6xl h-[85vh] overflow-hidden rounded-[48px] flex flex-col md:flex-row shadow-2xl ${darkMode ? 'bg-zinc-900 border border-zinc-800' : 'bg-white'}`}>
-        <button className="absolute right-8 top-8 p-3 hover:bg-black/10 rounded-full z-20" onClick={onClose}><X size={24}/></button>
-        <div className="md:w-[55%] bg-black flex items-center justify-center overflow-hidden">{item.type === 'text' ? <div className="p-20 text-white italic text-3xl font-black leading-relaxed text-center whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: item.content }} /> : <img src={item.mainImage || 'https://images.unsplash.com/photo-1513161455079-7dc1de15ef3e?q=80&w=800'} className="max-w-full max-h-full object-contain" alt="" />}</div>
-        <div className="md:w-[45%] p-12 overflow-y-auto border-l dark:border-zinc-800">
-          <div className="flex items-center gap-2 mb-6 text-indigo-500 font-black text-[10px] uppercase tracking-widest"><Edit3 size={14}/> {item.isLibraryItem ? 'Property Detail' : 'Edit Layer'}</div>
-          <div className="space-y-10">
-            <div><label className="text-[10px] font-black text-zinc-400 mb-2 block uppercase">卡片名称</label><input disabled={item.isLibraryItem} value={item.title} onChange={(e) => onUpdate({ title: e.target.value })} className="w-full bg-transparent text-4xl font-black tracking-tighter outline-none border-b border-zinc-200 dark:border-zinc-700 focus:border-indigo-500 pb-2 disabled:border-transparent" /></div>
-            <div><label className="text-[10px] font-black text-zinc-400 mb-2 block uppercase">灵感说明</label><textarea disabled={item.isLibraryItem} value={item.description || item.content || ''} onChange={(e) => onUpdate(item.type === 'text' ? { content: e.target.value } : { description: e.target.value })} className="w-full bg-zinc-50 dark:bg-zinc-950 p-4 rounded-2xl text-sm min-h-[100px] outline-none border-none resize-none disabled:opacity-60" /></div>
-            
-            <div>
-              <label className="text-[10px] font-black text-zinc-400 mb-3 block uppercase tracking-widest">关联语汇</label>
-              <div className="flex flex-wrap gap-2 mb-3">
-                {item.related?.map(tag => (
-                   <span key={tag} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-500/10 text-indigo-500 rounded-lg text-[10px] font-black">
-                     {tag} {!item.isLibraryItem && <X size={10} className="cursor-pointer" onClick={() => onUpdate({ related: item.related.filter(t => t !== tag) })} />}
-                   </span>
-                ))}
-              </div>
-              {!item.isLibraryItem && (
-                <div className="flex gap-2">
-                  <input placeholder="添加关联..." className="flex-1 bg-transparent border-b text-xs py-1 outline-none focus:border-indigo-500" value={newTag} onChange={(e) => setNewTag(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addTag('related')} />
-                  <button onClick={() => addTag('related')} className="p-1 hover:bg-zinc-100 rounded"><Plus size={16}/></button>
-                </div>
-              )}
-            </div>
-            
-            <div className="opacity-50">
-              <label className="text-[10px] font-black text-zinc-400 mb-1 block uppercase">分类索引</label>
-              <p className="text-xs font-bold tracking-tight">{item.category1} {item.category2 ? `/ ${item.category2}` : ''}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MenuOption({ icon, label, onClick, darkMode, disabled }) {
-  return <button disabled={disabled} onClick={onClick} className={`w-full px-4 py-2.5 flex items-center gap-3 text-xs font-black transition-colors ${disabled ? 'opacity-30 cursor-not-allowed' : darkMode ? 'hover:bg-zinc-800 text-zinc-300 hover:text-white' : 'hover:bg-zinc-50 text-zinc-600 hover:text-black'}`}>{icon} <span>{label}</span></button>;
-}
-
-function ControlButton({ icon, onClick, darkMode, title }) {
-  return <button onClick={onClick} title={title} className={`p-3 rounded-2xl border transition-all hover:scale-110 shadow-lg ${darkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-200 text-black'}`}>{icon}</button>;
-}
