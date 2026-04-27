@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Search, Home, BookOpen, ImageIcon, Palette, Upload, Plus, X, Moon, Sun, 
   Maximize2, Share2, Sparkles, Loader2, Wand2, Trash2, Copy, CheckSquare,
@@ -6,217 +6,353 @@ import {
   Undo2, Redo2, ClipboardPaste, ImagePlus
 } from 'lucide-react';
 
-const apiKey = ""; 
-const GEN_MODEL = "gemini-2.5-flash-preview-09-2025";
+// --- 健壮的本地 CSV 解析器 ---
+// 这个解析器可以完美处理 CSV 字段内包含的英文逗号和换行符，无需依赖第三方库
+const parseCSV = (str) => {
+  const arr = [];
+  let quote = false;
+  let row = 0;
+  let col = 0;
+  for (let c = 0; c < str.length; c++) {
+    let cc = str[c], nc = str[c+1];
+    arr[row] = arr[row] || [];
+    arr[row][col] = arr[row][col] || '';
+    if (cc === '"' && quote && nc === '"') { arr[row][col] += cc; ++c; continue; }
+    if (cc === '"') { quote = !quote; continue; }
+    if (cc === ',' && !quote) { ++col; continue; }
+    if (cc === '\r' && nc === '\n' && !quote) { ++row; col = 0; ++c; continue; }
+    if (cc === '\n' && !quote) { ++row; col = 0; continue; }
+    if (cc === '\r' && !quote) { ++row; col = 0; continue; }
+    arr[row][col] += cc;
+  }
+  if (arr.length === 0) return [];
+  
+  const headers = arr[0].map(h => h.trim());
+  return arr.slice(1)
+    .filter(row => row.length > 0 && row.some(cell => cell && cell.trim() !== ''))
+    .map(row => {
+      const obj = {};
+      headers.forEach((h, i) => {
+        obj[h] = row[i] ? row[i].trim() : '';
+      });
+      return obj;
+    });
+};
 
+// --- 卡片详情弹窗组件 ---
+const DetailModal = ({ card, onClose, darkMode }) => {
+  if (!card) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div 
+        className={`relative w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-3xl shadow-2xl transition-all ${darkMode ? 'bg-zinc-900 text-white' : 'bg-white text-zinc-900'}`} 
+        onClick={e => e.stopPropagation()}
+      >
+        <button 
+          onClick={onClose} 
+          className="absolute top-4 right-4 p-2 rounded-full bg-black/10 hover:bg-black/20 text-white z-10 transition-colors"
+        >
+          <X size={20} />
+        </button>
+        
+        <div className="flex flex-col md:flex-row min-h-[60vh]">
+          {/* 左侧：主图展示区 */}
+          <div className="w-full md:w-[45%] lg:w-1/2 aspect-square md:aspect-auto bg-zinc-100 dark:bg-zinc-950 flex items-center justify-center relative border-r border-zinc-200 dark:border-zinc-800">
+            {card.mainImage ? (
+              <img src={card.mainImage} alt={card.title} className="w-full h-full object-cover" />
+            ) : (
+              <div className="flex flex-col items-center text-zinc-400 dark:text-zinc-600">
+                <ImageOff size={64} className="mb-4 opacity-50" />
+                <span className="text-sm font-medium tracking-widest uppercase">暂无图片</span>
+              </div>
+            )}
+          </div>
+          
+          {/* 右侧：信息与图谱区 */}
+          <div className="w-full md:w-[55%] lg:w-1/2 p-8 lg:p-12 flex flex-col">
+            {/* 顶部分类面包屑 */}
+            <div className="flex flex-wrap gap-2 mb-6">
+              <span className="px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 rounded-full text-xs font-bold tracking-wider uppercase border border-zinc-200 dark:border-zinc-700">
+                {card.category1}
+              </span>
+              {card.category2 && (
+                <span className="px-3 py-1.5 bg-zinc-50 dark:bg-zinc-800/50 text-zinc-600 dark:text-zinc-400 rounded-full text-xs font-medium tracking-wider uppercase border border-zinc-200 dark:border-zinc-700/50">
+                  {card.category2}
+                </span>
+              )}
+            </div>
+            
+            <h2 className="text-3xl md:text-4xl font-black mb-6 tracking-tight">{card.title}</h2>
+            
+            <div className="prose prose-zinc dark:prose-invert max-w-none mb-10">
+              <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed text-base md:text-lg">
+                {card.description}
+              </p>
+            </div>
+
+            {/* 关联图谱区 */}
+            <div className="mt-auto space-y-8">
+              {/* 关联语汇（正向） */}
+              {card.relatedTerms && card.relatedTerms.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 uppercase tracking-wider mb-4 flex items-center">
+                    <BookOpen size={16} className="mr-2 opacity-50" />
+                    关联语汇
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {card.relatedTerms.map((term, idx) => (
+                      <span 
+                        key={idx} 
+                        className="px-3 py-1.5 bg-zinc-50 dark:bg-zinc-950 text-zinc-600 dark:text-zinc-400 text-sm font-medium rounded-xl border border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-500 cursor-pointer transition-colors"
+                      >
+                        {term}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 关联语汇（反向） */}
+              {card.relatedTermsReverse && card.relatedTermsReverse.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 uppercase tracking-wider mb-4 flex items-center">
+                    <BookOpen size={16} className="mr-2 opacity-50" />
+                    反向关联语汇（被关联）
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {card.relatedTermsReverse.map((term, idx) => (
+                      <span 
+                        key={idx} 
+                        className="px-3 py-1.5 bg-zinc-50 dark:bg-zinc-950 text-zinc-600 dark:text-zinc-400 text-sm font-medium rounded-xl border border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-500 cursor-pointer transition-colors"
+                      >
+                        {term}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- 主程序入口 ---
 export default function App() {
   const [activeTab, setActiveTab] = useState('discovery');
   const [darkMode, setDarkMode] = useState(false);
   const [selectedCard, setSelectedCard] = useState(null);
-  const [selectedBoardItem, setSelectedBoardItem] = useState(null);
   
-  // --- 状态修改：初始化为空，增加加载状态 ---
   const [vocabularyCards, setVocabularyCards] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-
-  const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
-  const [feedback, setFeedback] = useState({ message: null, type: 'success' }); 
   
-  const [boardItems, setBoardItems] = useState([]); 
-  const [boardView, setBoardView] = useState({ x: 0, y: 0, scale: 1 });
-  const [history, setHistory] = useState([]);
-  const [redoStack, setRedoStack] = useState([]);
+  // 白板的简易状态替代（保证逻辑不崩溃）
+  const [boardItems, setBoardItems] = useState([]);
 
-  // --- 新增：CSV 自动读取与解析逻辑 ---
- useEffect(() => {
-    const fetchAndParseCSV = async () => {
+  // 从 public/vocabulary.csv 加载数据
+  useEffect(() => {
+    const loadData = async () => {
       try {
-        // 1. 使用 Vite 的全局基础路径，确保线上环境能找到文件
-        const baseUrl = import.meta.env.BASE_URL || '/';
-        const fileUrl = `${baseUrl}vocabulary.csv`;
-        console.log("🔍 [Debug] 尝试请求CSV文件路径:", fileUrl);
-
-        // 2. 发起请求，增加对非 200 状态码的拦截
-        const response = await fetch(fileUrl);
+        const response = await fetch('./vocabulary.csv');
         if (!response.ok) {
-          throw new Error(`服务器返回错误状态码: ${response.status}`);
+          throw new Error('无法读取 CSV 文件');
         }
-
-        // 3. 使用 text() 直接读取，比之前使用 reader 的方式兼容性更好
         const csvText = await response.text();
-        console.log("✅ [Debug] 成功读取CSV文件，文件长度:", csvText.length);
-
-        // 4. 解析 CSV（兼容 Windows \r\n 和 Mac/Linux \n 换行符）
-        const lines = csvText.split(/\r?\n/).filter(line => line.trim() !== '');
         
-        if (lines.length <= 1) {
-          throw new Error("CSV文件内容为空或只有表头");
-        }
+        // 解析与清洗数据
+        const parsedData = parseCSV(csvText);
+        const formattedCards = parsedData.map((item, idx) => {
+          // 处理正向关联：按逗号分割并去除空格
+          const rawRelated = item['关联语汇'] || '';
+          const relatedTermsArray = rawRelated.split(',').map(s => s.trim()).filter(Boolean);
 
-        const parsedData = lines.slice(1).map((line, index) => {
-          // 处理 CSV 字段，防止某些行格式异常导致整个页面崩溃
-          const values = line.match(/(".*?"|[^,]+)(?=\s*,|\s*$)/g) || [];
-          const cleanValues = values.map(v => v.replace(/^"|"$/g, '').trim());
-          const tags = cleanValues[4] ? cleanValues[4].split(/[，,]/) : [];
-          
+          // 处理反向关联：按逗号分割并去除空格
+          const rawRelatedReverse = item['关联语汇（反向）'] || '';
+          const relatedTermsReverseArray = rawRelatedReverse.split(',').map(s => s.trim()).filter(Boolean);
+
           return {
-            id: `v-${index}`,
-            type: 'vocabulary',
-            title: cleanValues[0] || '未知语汇',
-            category: cleanValues[1] || '未分类',
-            description: cleanValues[3] || '暂无描述',
-            atmosphere: tags.slice(0, 3),
-            morphology: tags.slice(3, 6),
-            mainImage: cleanValues[6] || 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&q=80&w=800',
+            id: `voc_${idx}`,
+            title: item['语汇'] || '未命名',
+            category1: item['一级分类'] || '未分类',
+            category2: item['二级分类'] || '',
+            description: item['描述'] || '暂无描述信息...',
+            relatedTerms: relatedTermsArray,
+            relatedTermsReverse: relatedTermsReverseArray,
+            mainImage: item['主图'] || ''
           };
         });
-
-        console.log("✅ [Debug] 成功解析生成的卡片数量:", parsedData.length);
-        setVocabularyCards(parsedData);
-        setIsLoading(false);
+        
+        setVocabularyCards(formattedCards);
       } catch (error) {
-        console.error("❌ [Debug] 加载或解析 CSV 失败:", error);
-        setFeedback({ message: `数据库加载失败: ${error.message}`, type: "error" });
+        console.error("加载词汇库失败:", error);
+        // 如果抓取失败（比如本地没配好环境），提供一条错误提示数据
+        setVocabularyCards([{
+          id: 'error_1',
+          title: '数据读取失败',
+          category1: '系统提示',
+          category2: '',
+          description: '无法找到 public/vocabulary.csv，请检查文件路径或网络请求状态。',
+          relatedTerms: [],
+          relatedTermsReverse: [],
+          mainImage: ''
+        }]);
+      } finally {
         setIsLoading(false);
       }
     };
 
-    fetchAndParseCSV();
+    loadData();
   }, []);
-
-  // --- 样式注入 ---
-  useEffect(() => {
-    const style = document.createElement('style');
-    style.innerHTML = `
-      .custom-grab { cursor: grab !important; }
-      .custom-grabbing { cursor: grabbing !important; }
-      .editable-text { cursor: text !important; }
-    `;
-    document.head.appendChild(style);
-    return () => document.head.removeChild(style);
-  }, []);
-
-  const saveSnapshot = useCallback((items) => {
-    setHistory(prev => [JSON.parse(JSON.stringify(items)), ...prev].slice(0, 31));
-    setRedoStack([]); 
-  }, []);
-
-  const handleUndo = useCallback(() => {
-    if (history.length > 0) {
-      const previous = history[0];
-      setRedoStack(prev => [JSON.parse(JSON.stringify(boardItems)), ...prev]);
-      setBoardItems(previous);
-      setHistory(prev => prev.slice(1));
-      setFeedback({ message: "已撤销操作", type: "success" });
-      setTimeout(() => setFeedback({ message: null }), 1000);
-    }
-  }, [history, boardItems]);
-
-  const handleRedo = useCallback(() => {
-    if (redoStack.length > 0) {
-      const next = redoStack[0];
-      setHistory(prev => [JSON.parse(JSON.stringify(boardItems)), ...prev]);
-      setBoardItems(next);
-      setRedoStack(prev => prev.slice(1));
-      setFeedback({ message: "已还原操作", type: "success" });
-      setTimeout(() => setFeedback({ message: null }), 1000);
-    }
-  }, [redoStack, boardItems]);
 
   const addToBoard = (card) => {
-    if (boardItems.some(item => item.id === card.id)) {
-      setFeedback({ message: `"${card.title}" 已在白板中`, type: 'error' });
-      setTimeout(() => setFeedback({ message: null, type: 'success' }), 2000);
-      return;
-    }
-    const maxZ = Math.max(0, ...boardItems.map(i => i.zIndex || 0));
-    const newItem = {
-      boardId: `board-${Date.now()}`,
-      ...card,
-      atmosphere: card.atmosphere || [],
-      morphology: card.morphology || [],
-      x: (window.innerWidth / 2 - boardView.x) / boardView.scale - 104, 
-      y: (window.innerHeight / 2 - boardView.y) / boardView.scale - 170,
-      zIndex: maxZ + 1,
-      isSelected: false,
-      isAiAnalyzed: true,
-      isLibraryItem: true,
-      w: 208, h: 340
-    };
-    saveSnapshot(boardItems);
-    setBoardItems([...boardItems, newItem]);
-    setFeedback({ message: `已添加 "${card.title}"`, type: 'success' });
-    setTimeout(() => setFeedback({ message: null, type: 'success' }), 2000);
+    // 简单的添加到白板逻辑
+    setBoardItems([...boardItems, { ...card, uid: Date.now(), x: 100 + (boardItems.length * 20), y: 100 + (boardItems.length * 20) }]);
+    setActiveTab('whiteboard');
   };
 
-  const isMoodboardMode = activeTab === 'moodboard';
-
   return (
-    <div className={`min-h-screen transition-all ${darkMode ? 'bg-black text-zinc-100' : 'bg-white text-black'} overflow-hidden font-sans select-none`}>
-      {feedback.message && (
-        <div className={`fixed top-8 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 animate-in slide-in-from-top-4 duration-300 ${
-          feedback.type === 'success' ? 'bg-indigo-500 text-white' : 'bg-zinc-800 text-amber-400 border border-amber-400/30'
-        }`}>
-          {feedback.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
-          <span className="text-sm font-black tracking-tight">{feedback.message}</span>
+    <div className={`flex h-screen w-full overflow-hidden transition-colors duration-300 ${darkMode ? 'dark bg-zinc-950 text-white' : 'bg-zinc-50 text-zinc-900'}`}>
+      
+      {/* 侧边导航栏 */}
+      <aside className={`w-20 md:w-64 flex flex-col justify-between border-r shrink-0 transition-colors z-40 ${darkMode ? 'border-zinc-900 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
+        <div>
+          <div className="h-20 flex items-center justify-center md:justify-start md:px-8 border-b border-zinc-100 dark:border-zinc-900">
+            <div className="w-10 h-10 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-xl flex items-center justify-center font-black text-xl tracking-tighter">
+              V
+            </div>
+            <span className="ml-4 font-bold text-lg hidden md:block tracking-wide">语汇图谱</span>
+          </div>
+          
+          <nav className="p-4 space-y-2 mt-4">
+            <button 
+              onClick={() => setActiveTab('discovery')}
+              className={`w-full flex items-center justify-center md:justify-start px-4 py-4 md:py-3 rounded-2xl transition-all font-medium ${activeTab === 'discovery' ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-md' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900'}`}
+            >
+              <Search size={20} className={activeTab === 'discovery' ? 'opacity-100' : 'opacity-70'} />
+              <span className="ml-3 hidden md:block">发现语汇</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('whiteboard')}
+              className={`w-full flex items-center justify-center md:justify-start px-4 py-4 md:py-3 rounded-2xl transition-all font-medium ${activeTab === 'whiteboard' ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-md' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900'}`}
+            >
+              <Palette size={20} className={activeTab === 'whiteboard' ? 'opacity-100' : 'opacity-70'} />
+              <span className="ml-3 hidden md:block">设计白板</span>
+            </button>
+          </nav>
         </div>
-      )}
 
-      {/* 侧边导航 */}
-      <aside className={`fixed left-0 top-0 h-full border-r ${darkMode ? 'border-zinc-800 bg-black' : 'border-zinc-100 bg-white'} py-8 z-40 hidden md:flex flex-col transition-all duration-300 ease-in-out group/sidebar overflow-hidden w-16 hover:w-64 shadow-2xl`}>
-        <div onClick={() => setActiveTab('discovery')} className="flex items-center w-full mb-12 whitespace-nowrap cursor-pointer hover:opacity-80 active:scale-95 transition-all">
-          <div className="w-16 flex-none flex items-center justify-center"><div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center font-black text-white shadow-lg shadow-indigo-500/20">ID</div></div>
-          <h1 className="font-bold text-lg tracking-tighter transition-all duration-300 opacity-0 invisible group-hover/sidebar:opacity-100 group-hover/sidebar:visible text-indigo-500 uppercase">Design Database</h1>
+        <div className="p-4 border-t border-zinc-100 dark:border-zinc-900">
+          <button 
+            onClick={() => setDarkMode(!darkMode)}
+            className="w-full flex items-center justify-center md:justify-start px-4 py-4 md:py-3 rounded-2xl text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-all font-medium"
+          >
+            {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+            <span className="ml-3 hidden md:block">{darkMode ? '浅色模式' : '深色模式'}</span>
+          </button>
         </div>
-        <nav className="space-y-2 w-full">
-          <NavItem icon={<Home size={20}/>} label="发现" active={activeTab === 'discovery'} onClick={() => setActiveTab('discovery')} />
-          <NavItem icon={<BookOpen size={20}/>} label="设计语汇" active={activeTab === 'vocabulary'} onClick={() => setActiveTab('vocabulary')} />
-          <NavItem icon={<Palette size={20}/>} label="情绪白板" active={activeTab === 'moodboard'} onClick={() => setActiveTab('moodboard')} />
-        </nav>
-        <button onClick={() => setDarkMode(!darkMode)} className={`absolute bottom-10 left-0 w-full h-12 flex items-center transition-all duration-300 ${darkMode ? 'text-zinc-400 hover:text-white' : 'text-zinc-500 hover:text-black'}`}>
-          <div className="w-16 flex-none flex items-center justify-center">{darkMode ? <Sun size={18}/> : <Moon size={18}/>}</div>
-          <span className="whitespace-nowrap text-sm font-black transition-all duration-300 opacity-0 invisible group-hover/sidebar:opacity-100 group-hover/sidebar:visible">切换外观</span>
-        </button>
       </aside>
 
-      <main className={`transition-all duration-300 md:pl-16 ${isMoodboardMode ? 'h-screen' : 'pt-16 min-h-screen'}`}>
-        {isMoodboardMode ? (
-          <MoodBoard 
-            items={boardItems} setItems={setBoardItems} 
-            view={boardView} setView={setBoardView} 
-            darkMode={darkMode} setIsAiAnalyzing={setIsAiAnalyzing} 
-            onOpenDetail={setSelectedBoardItem}
-            undo={handleUndo} redo={handleRedo} saveSnapshot={saveSnapshot}
-            history={history} redoStack={redoStack}
-          />
-        ) : (
-          <div className="p-10 max-w-[1600px] mx-auto text-center md:text-left">
-             <header className="mb-12 header-title flex flex-col md:flex-row md:items-center justify-between gap-6">
-               <h2 className="text-3xl font-black tracking-tighter uppercase italic text-indigo-600">
-                {activeTab === 'discovery' ? '今日发现' : '语汇库检索'}
-               </h2>
-               <div className="max-w-xl relative w-full"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} /><input type="text" placeholder="检索设计灵感..." className={`w-full py-4 pl-12 pr-6 rounded-3xl text-sm outline-none border-2 transition-all ${darkMode ? 'bg-zinc-900 border-zinc-800 focus:border-indigo-500' : 'bg-zinc-50 border-transparent focus:bg-white focus:border-black'}`} /></div>
+      {/* 主内容区 */}
+      <main className="flex-1 h-screen overflow-y-auto relative">
+        {activeTab === 'discovery' && (
+          <div className="p-6 md:p-10 max-w-[1600px] mx-auto">
+            <header className="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 gap-6">
+              <div>
+                <h1 className="text-4xl md:text-5xl font-black tracking-tight mb-4">空间语汇库</h1>
+                <p className="text-zinc-500 dark:text-zinc-400 text-lg">探索、重组并构建您的室内设计视觉语言系统。</p>
+              </div>
+              <div className="flex gap-4">
+                <div className={`flex items-center px-4 py-3 rounded-2xl border ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'} shadow-sm min-w-[250px]`}>
+                  <Search size={18} className="text-zinc-400 mr-3" />
+                  <input 
+                    type="text" 
+                    placeholder="搜索语汇、分类或描述..." 
+                    className="bg-transparent border-none outline-none w-full text-sm font-medium placeholder-zinc-400"
+                  />
+                </div>
+              </div>
             </header>
-            
-            {/* 内容渲染区域：增加加载状态显示 */}
+
             {isLoading ? (
-              <div className="flex flex-col items-center justify-center py-40 gap-4">
-                <Loader2 className="animate-spin text-indigo-500" size={40} />
-                <p className="text-xs font-bold tracking-widest text-zinc-400 uppercase">加载语汇数据库...</p>
+              <div className="h-[50vh] flex flex-col items-center justify-center text-zinc-400">
+                <Loader2 size={40} className="animate-spin mb-4 text-zinc-300 dark:text-zinc-700" />
+                <p className="font-medium animate-pulse">正在加载数据库...</p>
               </div>
             ) : (
+              /* 瀑布流布局引擎 */
               <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-6 space-y-6">
                 {vocabularyCards.map(card => (
-                  <div key={card.id} onClick={() => setSelectedCard(card)} className={`break-inside-avoid group cursor-pointer overflow-hidden rounded-[32px] border-2 transition-all duration-500 ${darkMode ? 'bg-zinc-900 border-zinc-800 hover:border-indigo-500 shadow-2xl shadow-black' : 'bg-white border-zinc-100 hover:border-black shadow-sm'}`}>
-                    <div className="aspect-[4/5] overflow-hidden relative bg-zinc-100 dark:bg-zinc-950 flex items-center justify-center">
-                      <img src={card.mainImage} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
-                      <div className="absolute top-5 left-5 px-3 py-1 bg-black/60 backdrop-blur-md text-[9px] font-bold text-white rounded-full uppercase tracking-widest">{card.category}</div>
+                  <div 
+                    key={card.id}
+                    onClick={() => setSelectedCard(card)}
+                    className={`break-inside-avoid group cursor-pointer overflow-hidden rounded-[32px] border-2 transition-all duration-500 flex flex-col ${darkMode ? 'bg-zinc-900/50 border-zinc-800/50 hover:border-zinc-600 hover:bg-zinc-900 shadow-2xl shadow-black/50' : 'bg-white border-zinc-100 hover:border-zinc-300 hover:shadow-xl shadow-sm'}`}
+                  >
+                    {/* 封面图区域 */}
+                    <div className="aspect-[4/3] sm:aspect-[4/5] overflow-hidden relative bg-zinc-100 dark:bg-zinc-950 flex items-center justify-center shrink-0">
+                      {card.mainImage ? (
+                        <img src={card.mainImage} alt={card.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out" />
+                      ) : (
+                        <ImageOff className="text-zinc-300 dark:text-zinc-700" size={32} />
+                      )}
+                      
+                      {/* 多重分类标签 */}
+                      <div className="absolute top-4 left-4 flex flex-col gap-2 items-start z-10">
+                        <span className="px-3 py-1.5 bg-black/60 backdrop-blur-md text-white text-[11px] font-bold rounded-full border border-white/20 shadow-sm uppercase tracking-wider">
+                          {card.category1}
+                        </span>
+                        {card.category2 && (
+                          <span className="px-3 py-1.5 bg-white/90 dark:bg-zinc-800/90 backdrop-blur-md text-zinc-900 dark:text-zinc-100 text-[10px] font-semibold rounded-full border border-white/40 dark:border-zinc-700/50 shadow-sm uppercase">
+                            {card.category2}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="p-6 flex justify-between items-center">
-                      <h3 className="font-black text-xl tracking-tight truncate">{card.title}</h3>
-                      <button onClick={(e) => { e.stopPropagation(); addToBoard(card); }} className="p-3 hover:bg-indigo-500 hover:text-white dark:bg-zinc-800 rounded-2xl transition-all">
-                        <Copy size={18} />
-                      </button>
+
+                    {/* 卡片文本内容区 */}
+                    <div className="p-5 flex-1 flex flex-col justify-between">
+                      <div>
+                        <div className="flex justify-between items-start mb-3 gap-2">
+                          <h3 className="font-black text-xl tracking-tight leading-tight text-zinc-900 dark:text-zinc-100">{card.title}</h3>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); addToBoard(card); }} 
+                            className="p-2 -mr-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-all shrink-0 text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
+                            title="添加到白板"
+                          >
+                            <Plus size={20} />
+                          </button>
+                        </div>
+                        <p className="text-sm text-zinc-500 dark:text-zinc-400 line-clamp-3 leading-relaxed mb-4">
+                          {card.description}
+                        </p>
+                      </div>
+                      
+                      {/* 底部关联信息条：真实数据标签 */}
+                      <div className="mt-2 pt-4 border-t border-zinc-100 dark:border-zinc-800/50 flex flex-wrap gap-1.5">
+                        {card.relatedTerms.length > 0 ? (
+                          <>
+                            {card.relatedTerms.slice(0, 2).map((term, i) => (
+                              <span 
+                                key={i} 
+                                className="truncate px-2.5 py-1 text-[11px] font-medium bg-zinc-100 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-300 rounded-lg max-w-[85px]" 
+                                title={term}
+                              >
+                                {term}
+                              </span>
+                            ))}
+                            {card.relatedTerms.length > 2 && (
+                              <span className="px-2.5 py-1 text-[11px] font-medium bg-zinc-100 dark:bg-zinc-800/80 text-zinc-500 dark:text-zinc-400 rounded-lg shrink-0">
+                                +{card.relatedTerms.length - 2}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-[11px] text-zinc-400 italic">暂无关联节点</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -224,6 +360,45 @@ export default function App() {
             )}
           </div>
         )}
+
+        {/* 白板占位视图 */}
+        {activeTab === 'whiteboard' && (
+          <div className="w-full h-full bg-zinc-100 dark:bg-zinc-900 relative overflow-hidden flex flex-col items-center justify-center">
+             {boardItems.length === 0 ? (
+               <div className="text-center">
+                 <Palette size={64} className="mx-auto text-zinc-300 dark:text-zinc-700 mb-6" />
+                 <h2 className="text-2xl font-bold text-zinc-400 dark:text-zinc-500 mb-2">设计白板为空</h2>
+                 <p className="text-zinc-500 dark:text-zinc-600">请前往「发现语汇」添加卡片到白板中进行推敲。</p>
+                 <button onClick={() => setActiveTab('discovery')} className="mt-8 px-6 py-3 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-full font-bold shadow-lg hover:scale-105 transition-transform">
+                   去添加卡片
+                 </button>
+               </div>
+             ) : (
+               <div className="w-full h-full relative" style={{ backgroundImage: 'radial-gradient(#d4d4d8 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
+                 {/* 渲染白板上的卡片 */}
+                 {boardItems.map(item => (
+                   <div 
+                     key={item.uid} 
+                     className="absolute p-5 bg-white dark:bg-zinc-950 shadow-xl rounded-2xl w-64 border border-zinc-200 dark:border-zinc-800 cursor-move" 
+                     style={{ top: item.y, left: item.x }}
+                   >
+                     <div className="flex justify-between items-start mb-3">
+                       <span className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 text-[10px] font-bold uppercase rounded-md">{item.category1}</span>
+                       <button className="text-zinc-400 hover:text-red-500"><X size={14}/></button>
+                     </div>
+                     <h4 className="font-bold text-lg mb-2 leading-tight">{item.title}</h4>
+                     <p className="text-xs text-zinc-500 line-clamp-4">{item.description}</p>
+                   </div>
+                 ))}
+               </div>
+             )}
+          </div>
+        )}
       </main>
 
-      {selectedCard && <DetailModal card={selectedCard} onClose={() => setSelectedCard(null)} darkMode={darkMode} onAddToBoard={addToBoard} />}
+      {/* 详情弹窗 */}
+      <DetailModal card={selectedCard} onClose={() => setSelectedCard(null)} darkMode={darkMode} />
+
+    </div>
+  );
+}
