@@ -3,8 +3,8 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = 9000;
-// 关键改动：脚本现在和 index.html 在同一个目录下运行
-const DIST_DIR = __dirname; 
+// 核心逻辑：在根目录下运行，去服务 dist 文件夹里的内容
+const DIST_DIR = path.join(__dirname, 'dist'); 
 
 const MIME_TYPES = {
   '.html': 'text/html',
@@ -38,5 +38,5 @@ http.createServer((req, res) => {
     }
   });
 }).listen(PORT, '0.0.0.0', () => {
-  console.log(`室内设计语汇库运行中... 监听端口:${PORT}`);
+  console.log(`室内设计语汇库运行中: http://0.0.0.0:${PORT}`);
 });
