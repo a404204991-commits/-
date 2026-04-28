@@ -1,36 +1,46 @@
-# 室内设计语汇库 - 阿里云 FC 配置文件
-edition: 3.0.0
-name: interior-vocabulary-app
-vars:
-  region: "cn-shanghai" # 确保和你创建应用时选的区域一致
-
-resources:
-  vocabulary_function:
-    component: fc3
+edition: 1.0.0
+name: my-framework-app
+access: default
+services:
+  framework:
+    component: fc
     props:
-      region: ${vars.region}
-      handler: index.handler
-      runtime: nodejs20
-      description: '室内设计语汇库 Web 应用'
-      cpu: 0.5
-      memory: 512
-      timeout: 60
-      # 【核心改动】将代码目录设为当前根目录，这样阿里云就能看到 package.json 和 server.cjs
-      code: ./ 
-      customRuntimeConfig:
-        # 【核心改动】直接在这里指定启动命令，优先级最高
-        command:
-          - node
-        args:
-          - server.cjs
-        port: 9000
+      region: cn-shanghai
+      service:
+        name: serverless-devs-application
+      function:
+        name: design-vocabulary
+        description: Initialize
+        runtime: custom.debian10
+        environmentVariables:
+          PATH: >-
+            /opt/nodejs18/bin:/usr/local/bin/apache-maven/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/ruby/bin:/opt/bin:/code:/code/bin
+          NODE_PATH: /opt/nodejs/node_modules
+          LD_LIBRARY_PATH: >-
+            /code:/code/lib:/usr/local/lib:/opt/lib:/opt/php8.1/lib:/opt/php8.0/lib:/opt/php7.2/lib
+        layers:
+          - acs:fc:cn-shanghai:official:layers/Nodejs18/versions/1
+        memorySize: 128
+        cpu: 0.05
+        timeout: 60
+        codeUri: ./
+        diskSize: 512
+        caPort: 9000
+        customRuntimeConfig:
+          command:
+            - npm
+          args:
+            - run
+            - start
       triggers:
-        - triggerName: httpTrigger
-          triggerType: http
-          triggerConfig:
+        - name: httpTrigger
+          type: http
+          config:
             authType: anonymous
             methods:
               - GET
               - POST
               - PUT
               - DELETE
+              - HEAD
+              - PATCH
