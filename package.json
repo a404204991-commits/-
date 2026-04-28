@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "npx -y serve -s . -l 9000"
-  }
+  },
   "dependencies": {
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
