@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = 9000;
-// 核心逻辑：在根目录下运行，去服务 dist 文件夹里的内容
+// 因为 s.yaml 里 code 设为了 ./，所以网页文件在 dist 文件夹里
 const DIST_DIR = path.join(__dirname, 'dist'); 
 
 const MIME_TYPES = {
@@ -38,5 +38,5 @@ http.createServer((req, res) => {
     }
   });
 }).listen(PORT, '0.0.0.0', () => {
-  console.log(`室内设计语汇库运行中: http://0.0.0.0:${PORT}`);
+  console.log(`室内设计语汇库已在端口 ${PORT} 启动`);
 });
