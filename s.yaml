@@ -1,29 +1,27 @@
 edition: 1.0.0
-name: my-design-app
+name: interior-vocabulary
 access: default
-services:
-  framework:
-    component: fc
-    # === 关键修改：添加 build 配置块 ===
-    build:
-      # 使用 npm 构建（会自动识别 package.json）
-      builder: npm
-      # 构建命令：先安装依赖，再打包
-      script: 
-        - npm install
-        - npm run build
 
+services:
+  web:
+    component: fc
     props:
       region: cn-shanghai
       service:
         name: serverless-devs-application
+        description: Serverless Devs Web Service
       function:
         name: design-vocabulary
-        description: React App on FC
-        runtime: nodejs18  # 推荐使用较新的 Node 版本
-        # === 关键修改：codeUri 指向构建后的目录 ===
-        codeUri: ./dist
-        # 注意：这里去掉了 customRuntimeConfig，因为我们用的是静态托管模式
+        description: Vite App deployed on FC
+        runtime: custom-debian10
+        # 关键修改1：指向源码根目录
+        codeUri: ./
+        # 关键修改2：启动命令
+        customRuntimeConfig:
+          command:
+            - node
+          args:
+            - server.cjs
       triggers:
         - name: httpTrigger
           type: http
@@ -35,4 +33,8 @@ services:
               - PUT
               - DELETE
               - HEAD
-              - PATCH
+      # 关键修改3：明确告诉组件如何构建
+    hooks:
+      pre-deploy:
+        - npm install
+        - npm run build
