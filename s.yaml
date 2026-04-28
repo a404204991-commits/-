@@ -4,6 +4,15 @@ access: default
 services:
   framework:
     component: fc
+    # === 关键修改：添加 build 配置块 ===
+    build:
+      # 使用 npm 构建（会自动识别 package.json）
+      builder: npm
+      # 构建命令：先安装依赖，再打包
+      script: 
+        - npm install
+        - npm run build
+
     props:
       region: cn-shanghai
       service:
@@ -11,16 +20,10 @@ services:
       function:
         name: design-vocabulary
         description: React App on FC
-        # 修改点1: 使用 Node.js 官方运行时，而不是自定义运行时
-        runtime: nodejs18
-        # 修改点2: 指定环境变量，告诉构建工具我们是在生产环境
-        environmentVariables:
-          NODE_ENV: production
-        # 修改点3: 指向构建后的目录，而不是当前目录
+        runtime: nodejs18  # 推荐使用较新的 Node 版本
+        # === 关键修改：codeUri 指向构建后的目录 ===
         codeUri: ./dist
-        # 修改点4: 移除自定义的 command/args，使用默认的 Node.js 入口
-        # 这里假设你有一个 index.js 作为入口，或者直接指向 index.html
-        # 如果只是纯静态网站，通常不需要 customRuntimeConfig
+        # 注意：这里去掉了 customRuntimeConfig，因为我们用的是静态托管模式
       triggers:
         - name: httpTrigger
           type: http
