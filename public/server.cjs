@@ -3,7 +3,8 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = 9000;
-const DIST_DIR = path.join(__dirname, 'dist');
+// 关键改动：脚本现在和 index.html 在同一个目录下运行
+const DIST_DIR = __dirname; 
 
 const MIME_TYPES = {
   '.html': 'text/html',
@@ -17,9 +18,9 @@ const MIME_TYPES = {
 };
 
 http.createServer((req, res) => {
-  let filePath = path.join(DIST_DIR, req.url === '/' ? 'index.html' : req.url);
+  let urlPath = req.url.split('?')[0];
+  let filePath = path.join(DIST_DIR, urlPath === '/' ? 'index.html' : urlPath);
   
-  // SPA 路由支持：如果找不到文件，统一返回 index.html
   if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
     filePath = path.join(DIST_DIR, 'index.html');
   }
@@ -37,5 +38,5 @@ http.createServer((req, res) => {
     }
   });
 }).listen(PORT, '0.0.0.0', () => {
-  console.log(`室内设计语汇库已启动: http://0.0.0.0:${PORT}`);
+  console.log(`室内设计语汇库运行中... 监听端口:${PORT}`);
 });
